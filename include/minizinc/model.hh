@@ -40,6 +40,7 @@ namespace MiniZinc {
     /// Next model in root set list
     Model* _roots_next;
 
+  public:
     struct FnEntry {
       std::vector<Type> t;
       FunctionI* fi;
@@ -48,7 +49,7 @@ namespace MiniZinc {
       bool operator <(const FnEntry&) const;
       static bool compare(const FnEntry& e1, const FnEntry& e2);
     };
-    
+  protected:
     /// Add all instances of polymorphic entry \a fe to \a entries
     void addPolymorphicInstances(Model::FnEntry& fe, std::vector<FnEntry>& entries);
     
@@ -131,6 +132,8 @@ namespace MiniZinc {
     FunctionI* matchFn(EnvI& env, Call* c, bool strictEnums) const;
     /// Return function declaration for reverse mapper for type \a t
     FunctionI* matchRevMap(EnvI& env, const Type& t) const;
+    /// Check whether functions \a f and \a g have the same overloaded variants
+    bool sameOverloading(EnvI& env, const std::vector<Expression*>& args, FunctionI* f, FunctionI* g) const;
     /// Merge all builtin functions into \a m
     void mergeStdLib(EnvI& env, Model* m) const;
 
@@ -192,7 +195,7 @@ namespace MiniZinc {
     VarDeclIterator() {}
     VarDeclIterator(const VarDeclIterator& vi) : _it(vi._it) {}
     VarDeclIterator(Model* model, const Model::iterator& it) : _model(model), _it(it) {
-      while (_it != _model->end() && !(*_it)->isa<VarDeclI>()) {
+      while (_it != _model->end() && (!(*_it)->isa<VarDeclI>() || (*_it)->removed())) {
         ++_it;
       }
     }
@@ -209,7 +212,7 @@ namespace MiniZinc {
     VarDeclIterator& operator++() {
       do {
         ++_it;
-      } while (_it != _model->end() && !(*_it)->isa<VarDeclI>());
+      } while (_it != _model->end() && (!(*_it)->isa<VarDeclI>() || (*_it)->removed()));
       return *this;
     }
     
@@ -230,7 +233,7 @@ namespace MiniZinc {
     ConstraintIterator() {}
     ConstraintIterator(const ConstraintIterator& vi) : _it(vi._it) {}
     ConstraintIterator(Model* model, const Model::iterator& it) : _model(model), _it(it) {
-      while (_it != _model->end() && !(*_it)->isa<ConstraintI>()) {
+      while (_it != _model->end() && (!(*_it)->isa<ConstraintI>() || (*_it)->removed())) {
         ++_it;
       }
     }
@@ -247,7 +250,7 @@ namespace MiniZinc {
     ConstraintIterator& operator++() {
       do {
         ++_it;
-      } while (_it != _model->end() && !(*_it)->isa<ConstraintI>());
+      } while (_it != _model->end() && (!(*_it)->isa<ConstraintI>() || (*_it)->removed()));
       return *this;
     }
     
@@ -268,7 +271,7 @@ namespace MiniZinc {
     FunctionIterator() {}
     FunctionIterator(const FunctionIterator& vi) : _it(vi._it) {}
     FunctionIterator(Model* model, const Model::iterator& it) : _model(model), _it(it) {
-      while (_it != _model->end() && !(*_it)->isa<FunctionI>()) {
+      while (_it != _model->end() && (!(*_it)->isa<FunctionI>() || (*_it)->removed())) {
         ++_it;
       }
     }
@@ -285,7 +288,7 @@ namespace MiniZinc {
     FunctionIterator& operator++() {
       do {
         ++_it;
-      } while (_it != _model->end() && !(*_it)->isa<FunctionI>());
+      } while (_it != _model->end() && (!(*_it)->isa<FunctionI>() || (*_it)->removed()));
       return *this;
     }
     

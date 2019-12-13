@@ -329,7 +329,14 @@ namespace MiniZinc {
     typedef SetLit* Val;
     typedef Expression* ArrayVal;
     static SetLit* e(EnvI& env, Expression* e) {
-      return new SetLit(e->loc(),eval_intset(env, e));
+      switch (e->type().bt()) {
+        case Type::BT_INT:
+        case Type::BT_BOT:
+          return new SetLit(e->loc(),eval_intset(env, e));
+        case Type::BT_BOOL: return new SetLit(e->loc(),eval_boolset(env, e));
+        case Type::BT_FLOAT: return new SetLit(e->loc(),eval_floatset(env, e));
+        default: throw InternalError("invalid set literal type");
+      }
     }
     static Expression* exp(Expression* e) { return e; }
     Expression* flatten(EnvI&, Expression*) {
@@ -488,7 +495,7 @@ namespace MiniZinc {
     } else if (e->type() == Type::parfloat(1)) {
       std::vector<Expression*> a = eval_comp<EvalFloatLit>(env,e);
       ret = new ArrayLit(e->loc(),a);
-    } else if (e->type() == Type::parsetint(1)) {
+    } else if (e->type().st()==Type::ST_SET) {
       std::vector<Expression*> a = eval_comp<EvalSetLit>(env,e);
       ret = new ArrayLit(e->loc(),a);
     } else if (e->type() == Type::parstring(1)) {
@@ -1930,14 +1937,8 @@ namespace MiniZinc {
           return ret;
         }
         if (e->type().ispar()) {
-          if (e->type().isintset()) {
+          if (e->type().is_set()) {
             return EvalSetLit::e(env,e);
-          }
-          if (e->type().isfloatset()) {
-            return EvalFloatSetLit::e(env,e);
-          }
-          if (e->type().isboolset()) {
-            return EvalBoolSetLit::e(env,e);
           }
           if (e->type()==Type::parint()) {
             return EvalIntLit::e(env,e);
@@ -2477,9 +2478,39 @@ namespace MiniZinc {
           _bounds.push_back(FBounds(v,v));
         }
         return false;
-      } else {
-        return e->type().isfloat();
       }
+      if (e->type().isfloat()) {
+        if (ITE* ite = e->dyn_cast<ITE>()) {
+          FBounds itebounds(FloatVal::infinity(), -FloatVal::infinity());
+          for (int i=0; i<ite->size(); i++) {
+            if (ite->e_if(i)->type().ispar() && ite->e_if(i)->type().cv()==Type::CV_NO) {
+              if (eval_bool(env, ite->e_if(i))) {
+                BottomUpIterator<ComputeFloatBounds> cbi(*this);
+                cbi.run(ite->e_then(i));
+                FBounds& back = _bounds.back();
+                back.first = std::min(itebounds.first, back.first);
+                back.second = std::max(itebounds.second, back.second);
+                return false;
+              }
+            } else {
+              BottomUpIterator<ComputeFloatBounds> cbi(*this);
+              cbi.run(ite->e_then(i));
+              FBounds back = _bounds.back();
+              _bounds.pop_back();
+              itebounds.first = std::min(itebounds.first, back.first);
+              itebounds.second = std::max(itebounds.second, back.second);
+            }
+          }
+          BottomUpIterator<ComputeFloatBounds> cbi(*this);
+          cbi.run(ite->e_else());
+          FBounds& back = _bounds.back();
+          back.first = std::min(itebounds.first, back.first);
+          back.second = std::max(itebounds.second, back.second);
+          return false;
+        }
+        return true;
+      }
+      return false;
     }
     /// Visit integer literal
     void vIntLit(const IntLit& i) {
@@ -2511,15 +2542,20 @@ namespace MiniZinc {
       while (vd->flat() && vd->flat() != vd)
         vd = vd->flat();
       if (vd->ti()->domain()) {
-        FloatSetVal* fsv = eval_floatset(env, vd->ti()->domain());
-        _bounds.push_back(FBounds(fsv->min(), fsv->max()));
+        GCLock lock;
+        FloatSetVal* fsv = eval_floatset(env,vd->ti()->domain());
+        if (fsv->size()==0) {
+          valid = false;
+          _bounds.push_back(FBounds(0,0));
+        } else {
+          _bounds.push_back(FBounds(fsv->min(0),fsv->max(fsv->size()-1)));
+        }
       } else {
         if (vd->e()) {
           BottomUpIterator<ComputeFloatBounds> cbi(*this);
           cbi.run(vd->e());
         } else {
-          valid = false;
-          _bounds.push_back(FBounds(0,0));
+          _bounds.push_back(FBounds(-FloatVal::infinity(),FloatVal::infinity()));
         }
       }
     }

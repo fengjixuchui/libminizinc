@@ -4,9 +4,7 @@
 #  OSICBC_INCLUDE_DIRS    - The CBC include directories
 #  OSICBC_LIBRARIES       - The libraries needed to use CBC
 #  GOSICBC_TARGETS        - The names of imported targets created for CBC
-# User can set OSICBC_ROOT to the preferred installation prefix
-
-list(INSERT CMAKE_PREFIX_PATH 0 "${OSICBC_ROOT}" "$ENV{OSICBC_ROOT}")
+# User can set OsiCBC_ROOT to the preferred installation prefix
 
 set(OSICBC_FIND_FILES coin/CbcSolver.hpp coin/CglPreProcess.hpp coin/ClpConfig.h coin/CoinSignal.hpp coin/OsiClpSolverInterface.hpp coin/OsiSolverInterface.hpp)
 
@@ -71,11 +69,10 @@ include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(OsiCBC
   FOUND_VAR OSICBC_FOUND
   REQUIRED_VARS OSICBC_INCLUDE OSICBC_LIBRARY
-  FAIL_MESSAGE "Could NOT find OsiCBC, use OSICBC_ROOT to hint its location"
+  FAIL_MESSAGE "Could NOT find OsiCBC, use OsiCBC_ROOT to hint its location"
 )
 
 mark_as_advanced(OSICBC_INCLUDE OSICBC_LIBRARY)
-list(REMOVE_AT CMAKE_PREFIX_PATH 1 0)
 
 set(OSICBC_LIBRARIES ${OSICBC_LIBRARY})
 set(OSICBC_INCLUDE_DIRS ${OSICBC_INCLUDE})

@@ -15,7 +15,7 @@
 #include <minizinc/iter.hh>
 #include <minizinc/model.hh>
 #include <minizinc/flatten_internal.hh>
-
+#include <minizinc/astiterator.hh>
 #include <minizinc/prettyprinter.hh>
 
 namespace MiniZinc {
@@ -599,6 +599,33 @@ namespace MiniZinc {
     return _g[_g_idx[gen]+2+i]->cast<VarDecl>();
   }
 
+  bool
+  Comprehension::containsBoundVariable(Expression* e) {
+    std::unordered_set<VarDecl*> decls;
+    for (unsigned int i=0; i<n_generators(); i++) {
+      for (unsigned int j=0; j<n_decls(i); j++) {
+        decls.insert(decl(i,j));
+      }
+    }
+    class FindVar : public EVisitor {
+      std::unordered_set<VarDecl*>& _decls;
+      bool _found;
+    public:
+      FindVar(std::unordered_set<VarDecl*>& decls) : _decls(decls), _found(false) {}
+      bool enter(Expression*) {
+        return !_found;
+      }
+      void vId(Id& ident) {
+        if (_decls.find(ident.decl()) != _decls.end()) {
+          _found = true;
+        }
+      }
+      bool found(void) const { return _found; }
+    } _fv(decls);
+    topDown(_fv, e);
+    return _fv.found();
+  }
+
   void
   ITE::rehash(void) {
     init_hash();
@@ -621,6 +648,16 @@ namespace MiniZinc {
     cmb_hash(h(static_cast<int>(op())));
     cmb_hash(Expression::hash(_e0));
     cmb_hash(Expression::hash(_e1));
+  }
+
+  Call*
+  BinOp::morph(const ASTString& ident, const std::vector<Expression*>& args) {
+    _id = Call::eid;
+    _flag_1 = true;
+    Call* c = cast<Call>();
+    c->id(ident);
+    c->args(args);
+    return c;
   }
 
   namespace {
@@ -832,12 +869,13 @@ namespace MiniZinc {
            const std::vector<Expression*>& let, Expression* in)
   : Expression(loc,E_LET,Type()) {
     _let = ASTExprVec<Expression>(let);
-    std::vector<Expression*> vde(let.size());
+    std::vector<Expression*> vde;
     for (unsigned int i=0; i<let.size(); i++) {
       if (VarDecl* vd = Expression::dyn_cast<VarDecl>(let[i])) {
-        vde[i] =  vd->e();
-      } else {
-        vde[i] = NULL;
+        vde.push_back(vd->e());
+        for (unsigned int i=0; i<vd->ti()->ranges().size(); i++) {
+          vde.push_back(vd->ti()->ranges()[i]->domain());
+        }
       }
     }
     _let_orig = ASTExprVec<Expression>(vde);
@@ -849,16 +887,19 @@ namespace MiniZinc {
   void
   Let::pushbindings(void) {
     GC::mark();
-    for (unsigned int i=_let.size(); i--;) {
+    for (unsigned int i=0, j=0; i<_let.size(); i++) {
       if (VarDecl* vd = _let[i]->dyn_cast<VarDecl>()) {
         vd->trail();
-        vd->e(_let_orig[i]);
+        vd->e(_let_orig[j++]);
+        for (unsigned int k=0; k<vd->ti()->ranges().size(); k++) {
+          vd->ti()->ranges()[k]->domain(_let_orig[j++]);
+        }
       }
     }
   }
   void
   Let::popbindings(void) {
-    for (unsigned int i=_let.size(); i--;) {
+    for (unsigned int i=0; i<_let.size(); i++) {
       if (VarDecl* vd = _let[i]->dyn_cast<VarDecl>()) {
         GC::untrail();
         break;
@@ -1360,6 +1401,7 @@ namespace MiniZinc {
     ids.int2float = ASTString("int2float");
     ids.bool2float = ASTString("bool2float");
     ids.assert = ASTString("assert");
+    ids.mzn_deprecate = ASTString("mzn_deprecate");
     ids.trace = ASTString("trace");
 
     ids.sum = ASTString("sum");
@@ -1493,6 +1535,7 @@ namespace MiniZinc {
     ann.rhs_from_assignment->type(Type::ann());
     ann.domain_change_constraint = new Id(Location(), ASTString("domain_change_constraint"), NULL);
     ann.domain_change_constraint->type(Type::ann());
+    ann.mzn_deprecated = ASTString("mzn_deprecated");
 
     var_redef = new FunctionI(Location(),"__internal_var_redef",new TypeInst(Location(),Type::varbool()),
                               std::vector<VarDecl*>());
@@ -1675,6 +1718,7 @@ namespace MiniZinc {
     v.push_back(new StringLit(Location(),ids.pow));
 
     v.push_back(new StringLit(Location(),ids.assert));
+    v.push_back(new StringLit(Location(),ids.mzn_deprecate));
     v.push_back(new StringLit(Location(),ids.trace));
     v.push_back(new StringLit(Location(),ids.introduced_var));
     v.push_back(new StringLit(Location(),ids.anonEnumFromStrings));
@@ -1703,6 +1747,7 @@ namespace MiniZinc {
 #endif
     v.push_back(ann.rhs_from_assignment);
     v.push_back(ann.domain_change_constraint);
+    v.push_back(new StringLit(Location(), ann.mzn_deprecated));
 
     v.push_back(new StringLit(Location(),cli.cmdlineData_short_str));
     v.push_back(new StringLit(Location(),cli.cmdlineData_str));

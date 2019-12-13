@@ -337,19 +337,6 @@ namespace MiniZinc {
                           +c->id().str());
     }
     
-    if (decl->params().size()==1) {
-      if (Call* call_body = Expression::dyn_cast<Call>(decl->e())) {
-        if (call_body->n_args()==1 && Expression::equal(call_body->arg(0),decl->params()[0]->id())) {
-          c->id(call_body->id());
-          c->decl(call_body->decl());
-          decl = c->decl();
-          for (ExpressionSetIter esi = call_body->ann().begin(); esi != call_body->ann().end(); ++esi) {
-            c->addAnnotation(*esi);
-          }
-        }
-      }
-    }
-    
     Ctx nctx = ctx;
     nctx.neg = false;
     ASTString cid = c->id();
@@ -377,7 +364,7 @@ namespace MiniZinc {
         nctx.neg = true;
         cid = constants().ids.forall;
       }
-    } else if (decl->e()==NULL && (cid == constants().ids.assert || cid == constants().ids.trace)) {
+    } else if (decl->e()==NULL && (cid == constants().ids.assert || cid == constants().ids.trace || cid == constants().ids.mzn_deprecate)) {
       if (cid == constants().ids.assert && c->n_args()==2) {
         (void) decl->_builtins.b(env,c);
         ret = flat_exp(env,ctx,constants().lit_true,r,b);
@@ -749,8 +736,29 @@ namespace MiniZinc {
         for (unsigned int i=0; i<args_ee.size(); i++)
           args.push_back(args_ee[i].r());
       }
+      bool hadImplementation = (decl->e() != nullptr);
       KeepAlive cr;
       {
+        GCLock lock;
+        std::vector<Expression*> e_args = toExpVec(args);
+        Call* cr_c = new Call(c->loc().introduce(),cid,e_args);
+        decl = env.model->matchFn(env,cr_c,false);
+        if (decl==NULL)
+          throw FlatteningError(env,cr_c->loc(), "cannot find matching declaration");
+        cr_c->type(decl->rtype(env,e_args,false));
+        assert(decl);
+        cr_c->decl(decl);
+        cr = cr_c;
+      }
+      if (hadImplementation && decl->e()==NULL && (cid == constants().ids.lin_exp || cid==constants().ids.sum)) {
+        args.clear();
+        if (e->type().isint()) {
+          flatten_linexp_call<IntLit>(env,ctx,nctx,cid,cr()->cast<Call>(),ret,b,r,args_ee,args);
+        } else {
+          flatten_linexp_call<FloatLit>(env,ctx,nctx,cid,cr()->cast<Call>(),ret,b,r,args_ee,args);
+        }
+        if (args.size()==0)
+          return ret;
         GCLock lock;
         std::vector<Expression*> e_args = toExpVec(args);
         Call* cr_c = new Call(c->loc().introduce(),cid,e_args);

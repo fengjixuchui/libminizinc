@@ -92,6 +92,10 @@ namespace MiniZinc {
       int time = atoi(argv[i].c_str());
       if(time >= 0)
         _opt.time = time;
+    } else if (string(argv[i])=="-v" || string(argv[i])=="--verbose-solving") {
+      _opt.verbose = true;
+    } else if (string(argv[i])=="-s" || string(argv[i])=="--solver-statistics") {
+      _opt.statistics = true;
     } else {
       return false;
     }
@@ -163,7 +167,7 @@ namespace MiniZinc {
       ss << "gecode_" << name;
       _constraintRegistry.add(ss.str(), p);
       std::stringstream ss2;
-      ss << "fzn_" << name;
+      ss2 << "fzn_" << name;
       _constraintRegistry.add(ss2.str(), p);
       // TODO: DO NOT USE global names directly
       _constraintRegistry.add(name, p);

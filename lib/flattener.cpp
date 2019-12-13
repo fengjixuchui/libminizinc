@@ -95,6 +95,7 @@ void Flattener::printHelp(ostream& os)
   << "  --keep-paths\n    Don't remove path annotations from FlatZinc" << std::endl
   << "  --output-paths\n    Output a symbol table (.paths file)" << std::endl
   << "  --output-paths-to-file <file>\n    Output a symbol table (.paths file) to <file>" << std::endl
+  << "  --output-detailed-timing\n    Output detailed profiling information of compilation time" << std::endl
   << "  --output-to-stdout, --output-fzn-to-stdout\n    Print generated FlatZinc to standard output" << std::endl
   << "  --output-ozn-to-stdout\n    Print model output specification to standard output" << std::endl
   << "  --output-paths-to-stdout\n    Output symbol table to standard output" << std::endl
@@ -150,6 +151,8 @@ bool Flattener::processOption(int& i, std::vector<std::string>& argv)
   } else if ( cop.getOption( "--output-paths-to-stdout" ) ) {
     fopts.collect_mzn_paths = true;
     flag_output_paths_stdout = true;
+  } else if ( cop.getOption( "--output-detailed-timing" ) ) {
+    fopts.detailedTiming = true;
   } else if ( cop.getOption( "--output-mode", &buffer ) ) {
     if (buffer == "dzn") {
       flag_output_mode = FlatteningOptions::OUTPUT_DZN;
@@ -559,10 +562,10 @@ void Flattener::flatten(const std::string& modelString, const std::string& model
           throw Error("multiple type errors");
         }
         if (flag_model_interface_only) {
-          MiniZinc::output_model_interface(*env, m, os);
+          MiniZinc::output_model_interface(*env, m, os, includePaths);
         }
         if (flag_model_types_only) {
-          MiniZinc::output_model_variable_types(*env, m, os);
+          MiniZinc::output_model_variable_types(*env, m, os, includePaths);
         }
         if (flag_compile_solution_check_model) {
           std::string mzc(FileUtils::deflateString(compiledSolutionCheckModel.str()));

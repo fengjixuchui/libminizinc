@@ -32,15 +32,18 @@ const auto SolverInstance__ERROR = MiniZinc::SolverInstance::ERROR;  // before w
 #include <string>
 #include <thread>
 #include <mutex>
+#include <condition_variable>
+#include <deque>
 
 namespace MiniZinc {
 
 #ifdef _WIN32
 
   template<class S2O>
-  void ReadPipePrint(HANDLE g_hCh, bool* _done, std::ostream* pOs, S2O* pSo, std::mutex* mtx) {
+  void ReadPipePrint(HANDLE g_hCh, bool* _done, std::ostream* pOs, std::deque<std::string>* outputQueue,
+    std::mutex* mtx, std::mutex* cv_mutex, std::condition_variable* cv) {
     bool& done = *_done;
-    assert( pOs!=0 || pSo!=0 );
+    assert(pOs != 0 || outputQueue != 0);
     while (!done) {
       char buffer[5255];
       char nl_buffer[5255];
@@ -48,22 +51,39 @@ namespace MiniZinc {
       BOOL bSuccess = ReadFile(g_hCh, buffer, sizeof(buffer) - 1, &count, NULL);
       if (bSuccess && count > 0) {
         int nl_count = 0;
-        for (int i=0; i<count; i++) {
+        for (int i = 0; i < count; i++) {
           if (buffer[i] != 13) {
             nl_buffer[nl_count++] = buffer[i];
           }
         }
         nl_buffer[nl_count] = 0;
         std::lock_guard<std::mutex> lck(*mtx);
-        if (pSo)
-          pSo->feedRawDataChunk( nl_buffer );
+        if (outputQueue) {
+          std::unique_lock<std::mutex> lk(*cv_mutex);
+          bool wasEmpty = outputQueue->empty();
+          outputQueue->push_back(nl_buffer);
+          lk.unlock();
+          if (wasEmpty) {
+            cv->notify_one();
+          }
+        }
         if (pOs)
           (*pOs) << nl_buffer << std::flush;
       }
       else {
-        if (pSo)
-          pSo->feedRawDataChunk( "\n" );   // in case the last chunk had none
-        done = true;
+        if (outputQueue) {
+          std::unique_lock<std::mutex> lk(*cv_mutex);
+          bool wasEmpty = outputQueue->empty();
+          outputQueue->push_back("\n");
+          done = true;
+          lk.unlock();
+          if (wasEmpty) {
+            cv->notify_one();
+          }
+        }
+        else {
+          done = true;
+        }
       }
     }
   }
@@ -177,19 +197,50 @@ namespace MiniZinc {
       CloseHandle(g_hChildStd_IN_Rd);
       bool doneStdout = false;
       bool doneStderr = false;
+
       // Threaded solution seems simpler than asyncronous pipe reading
       std::mutex pipeMutex;
       std::timed_mutex terminateMutex;
+
+      std::mutex cv_mutex;
+      std::condition_variable cv;
+
+      std::deque<std::string> outputQueue;
       terminateMutex.lock();
-      thread thrStdout(&ReadPipePrint<S2O>, g_hChildStd_OUT_Rd, &doneStdout, nullptr, pS2Out, &pipeMutex);
-      thread thrStderr(&ReadPipePrint<S2O>, g_hChildStd_ERR_Rd, &doneStderr, &pS2Out->getLog(), nullptr, &pipeMutex);
+      thread thrStdout(&ReadPipePrint<S2O>, g_hChildStd_OUT_Rd, &doneStdout, nullptr, &outputQueue, &pipeMutex, &cv_mutex, &cv);
+      thread thrStderr(&ReadPipePrint<S2O>, g_hChildStd_ERR_Rd, &doneStderr, &pS2Out->getLog(), nullptr, &pipeMutex, nullptr, nullptr);
       thread thrTimeout(TimeOut, piProcInfo.hProcess, &doneStdout, &doneStderr, timelimit, &terminateMutex);
+
+      while (true) {
+        std::unique_lock<std::mutex> lk(cv_mutex);
+        cv.wait(lk, [&] { return !outputQueue.empty(); });
+        while (!outputQueue.empty()) {
+          try {
+            pS2Out->feedRawDataChunk(outputQueue.front().c_str());
+            outputQueue.pop_front();
+          }
+          catch (...) {
+            TerminateProcess(piProcInfo.hProcess, 0);
+            doneStdout = true;
+            doneStderr = true;
+            lk.unlock();
+            thrStdout.join();
+            thrStderr.join();
+            terminateMutex.unlock();
+            thrTimeout.join();
+            std::rethrow_exception(std::current_exception());
+          }
+        }
+        if (doneStdout)
+          break;
+      }
+
       thrStdout.join();
       thrStderr.join();
       terminateMutex.unlock();
       thrTimeout.join();
       DWORD exitCode = 0;
-      if (GetExitCodeProcess(piProcInfo.hProcess,&exitCode) == FALSE) {
+      if (GetExitCodeProcess(piProcInfo.hProcess, &exitCode) == FALSE) {
         exitCode = 1;
       }
       CloseHandle(piProcInfo.hProcess);

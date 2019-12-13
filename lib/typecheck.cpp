@@ -800,11 +800,13 @@ namespace MiniZinc {
         run(env, let->in());
         VarDeclCmp poscmp(pos);
         std::stable_sort(let->let().begin(), let->let().end(), poscmp);
-        for (unsigned int i=0; i<let->let().size(); i++) {
+        for (unsigned int i=0, j=0; i<let->let().size(); i++) {
           if (VarDecl* vd = let->let()[i]->dyn_cast<VarDecl>()) {
-            let->let_orig()[i] = vd->e();
-          } else {
-            let->let_orig()[i] = NULL;
+            let->let_orig()[j++] = vd->e();
+            for (unsigned int k=0; k<vd->ti()->ranges().size(); k++) {
+              let->let_orig()[j++] = vd->ti()->ranges()[k]->domain();
+            }
+
           }
         }
         scopes.pop();
@@ -1473,6 +1475,9 @@ namespace MiniZinc {
           if (Type::bt_subtype(tret, ethen->type(), true)) {
             tret.bt(ethen->type().bt());
           }
+          if (tret.enumId()!=0 && ethen->type().enumId()==0) {
+            tret.enumId(0);
+          }
           if (ethen->type().isvar()) allpar=false;
           if (ethen->type().isopt()) allpresent=false;
           if (ethen->type().cv())
@@ -1513,6 +1518,68 @@ namespace MiniZinc {
           bop.decl(fi);
         else
           bop.decl(NULL);
+        
+        if (bop.lhs()->type().isint() && bop.rhs()->type().isint() &&
+            (bop.op()==BOT_EQ || bop.op()==BOT_GQ || bop.op()==BOT_GR || bop.op()==BOT_NQ
+             || bop.op()==BOT_LE || bop.op()==BOT_LQ)) {
+          Call* call = bop.lhs()->dyn_cast<Call>();
+          Expression* rhs = bop.rhs();
+          BinOpType bot = bop.op();
+          if (!call) {
+            call = bop.rhs()->dyn_cast<Call>();
+            rhs = bop.lhs();
+            switch (bop.op()) {
+              case BOT_LQ: bot=BOT_GQ; break;
+              case BOT_LE: bot=BOT_GR; break;
+              case BOT_GQ: bot=BOT_LQ; break;
+              case BOT_GR: bot=BOT_LE; break;
+              default: break;
+            }
+          }
+          if (call && call->id()=="count" && call->n_args()==1 && call->arg(0)->isa<Comprehension>()) {
+            Comprehension* comp = call->arg(0)->cast<Comprehension>();
+            BinOp* inner_bo = comp->e()->dyn_cast<BinOp>();
+            if (inner_bo) {
+              if (inner_bo->op()==BOT_EQ && inner_bo->lhs()->type().isint()) {
+                Expression* generated = inner_bo->lhs();
+                Expression* comparedTo = inner_bo->rhs();
+                if (comp->containsBoundVariable(comparedTo)) {
+                  if (comp->containsBoundVariable(generated)) {
+                    comparedTo = nullptr;
+                  } else {
+                    std::swap(generated,comparedTo);
+                  }
+                }
+                if (comparedTo) {
+                  GCLock lock;
+                  ASTString cid;
+                  switch (bot) {
+                    case BOT_EQ: cid = ASTString("count_eq"); break;
+                    case BOT_GQ: cid = ASTString("count_leq"); break;
+                    case BOT_GR: cid = ASTString("count_lt"); break;
+                    case BOT_LQ: cid = ASTString("count_geq"); break;
+                    case BOT_LE: cid = ASTString("count_gt"); break;
+                    case BOT_NQ: cid = ASTString("count_neq"); break;
+                    default: assert(false);
+                  }
+
+                  comp->e(generated);
+                  Type ct = comp->type();
+                  ct.bt(generated->type().bt());
+                  
+                  std::vector<Expression*> args({comp,comparedTo,rhs});
+                  FunctionI* newCall_decl = _model->matchFn(_env, cid, args, true);
+                  if (newCall_decl==nullptr) {
+                    throw InternalError("could not replace binary operator by call to "+cid.str());
+                  } else {
+                    Call* newCall = bop.morph(cid, args);
+                    newCall->decl(newCall_decl);
+                  }
+                }
+              }
+            }
+          }
+        }
       } else {
         throw TypeError(_env,bop.loc(),
           std::string("type error in operator application for `")+
@@ -1555,6 +1622,27 @@ namespace MiniZinc {
       for (unsigned int i=static_cast<unsigned int>(args.size()); i--;)
         args[i] = call.arg(i);
       if (FunctionI* fi = _model->matchFn(_env,call.id(),args,true)) {
+        if (fi->e() && fi->e()->isa<Call>()) {
+          Call* next_call = fi->e()->cast<Call>();
+          if (next_call->decl() && next_call->n_args()==fi->params().size() && _model->sameOverloading(_env, args, fi, next_call->decl())) {
+            bool macro = true;
+            for (unsigned int i=0; i<fi->params().size(); i++) {
+              if (!Expression::equal(next_call->arg(i),fi->params()[i]->id())) {
+                macro = false;
+                break;
+              }
+            }
+            if (macro) {
+              call.decl(next_call->decl());
+              for (ExpressionSetIter esi = next_call->ann().begin(); esi != next_call->ann().end(); ++esi) {
+                call.addAnnotation(*esi);
+              }
+              call.rehash();
+              fi = next_call->decl();
+            }
+          }
+        }
+        
         bool cv = false;
         for (unsigned int i=0; i<args.size(); i++) {
           if(Comprehension* c = call.arg(i)->dyn_cast<Comprehension>()) {
@@ -1627,7 +1715,36 @@ namespace MiniZinc {
         Type ty = fi->rtype(_env,args,true);
         ty.cv(cv);
         call.type(ty);
-        call.decl(fi);
+        
+        if (Call* deprecated = fi->ann().getCall(constants().ann.mzn_deprecated)) {
+          // rewrite this call into a call to mzn_deprecate(..., e)
+          GCLock lock;
+          std::vector<Expression*> params(call.n_args());
+          for (unsigned int i=0; i<params.size(); i++) {
+            params[i] = call.arg(i);
+          }
+          Call* origCall = new Call(call.loc(),call.id(),params);
+          origCall->type(ty);
+          origCall->decl(fi);
+          call.id(constants().ids.mzn_deprecate);
+          std::vector<Expression*> args({new StringLit(Location(), fi->id()), deprecated->arg(0), deprecated->arg(1), origCall});
+          call.args(args);
+          FunctionI* deprecated_fi = _model->matchFn(_env, &call, false);
+          if (deprecated_fi==NULL) {
+            std::ostringstream oss;
+            oss << "no function or predicate with this signature found: `";
+            oss << call.id() << "(";
+            for (unsigned int i=0; i<call.n_args(); i++) {
+              oss << call.arg(i)->type().toString(_env);
+              if (i<call.n_args()-1) oss << ",";
+            }
+            oss << ")'";
+            throw TypeError(_env,call.loc(), oss.str());
+          }
+          call.decl(deprecated_fi);
+        } else {
+          call.decl(fi);
+        }
       } else {
         std::ostringstream oss;
         oss << "no function or predicate with this signature found: `";
@@ -1644,7 +1761,7 @@ namespace MiniZinc {
     void vLet(Let& let) {
       bool cv = false;
       bool isVar = false;
-      for (unsigned int i=0; i<let.let().size(); i++) {
+      for (unsigned int i=0, j=0; i<let.let().size(); i++) {
         Expression* li = let.let()[i];
         cv = cv || li->type().cv();
         if (VarDecl* vdi = li->dyn_cast<VarDecl>()) {
@@ -1660,7 +1777,10 @@ namespace MiniZinc {
             _typeErrors.push_back(TypeError(_env,vdi->loc(),
                                             "type-inst variables not allowed in type-inst for let variable `"+vdi->id()->str().str()+"'"));
           }
-          let.let_orig()[i] = vdi->e();
+          let.let_orig()[j++] = vdi->e();
+          for (unsigned int k=0; k<vdi->ti()->ranges().size(); k++) {
+            let.let_orig()[j++] = vdi->ti()->ranges()[k]->domain();
+          }
         }
         isVar |= li->type().isvar();
       }
@@ -2312,19 +2432,24 @@ namespace MiniZinc {
     os << "}";
   }
 
-  void output_model_variable_types(Env& env, Model* m, std::ostream& os) {
+  void output_model_variable_types(Env& env, Model* m, std::ostream& os, const std::vector<std::string>& skipDirs) {
     class VInfVisitor : public ItemVisitor {
     public:
       Env& env;
+      const std::vector<std::string>& skip_dirs;
       bool had_var;
       bool had_enum;
       std::ostringstream oss_vars;
       std::ostringstream oss_enums;
-      VInfVisitor(Env& env0) : env(env0), had_var(false), had_enum(false) {}
+      VInfVisitor(Env& env0, const std::vector<std::string>& skipDirs) : env(env0), skip_dirs(skipDirs), had_var(false), had_enum(false) {}
       bool enter(Item* i) {
-        if (IncludeI* ii = i->dyn_cast<IncludeI>()) {
+        if (auto ii = i->dyn_cast<IncludeI>()) {
           std::string prefix = ii->m()->filepath().str().substr(0,ii->m()->filepath().size()-ii->f().size());
-          return (prefix.empty() || prefix == "./");
+          for (const auto & skip_dir : skip_dirs) {
+            if (prefix.substr(0, skip_dir.size()) == skip_dir) {
+              return false;
+            }
+          }
         }
         return true;
       }
@@ -2339,7 +2464,7 @@ namespace MiniZinc {
           had_enum = true;
         }
       }
-    } _vinf(env);
+    } _vinf(env, skipDirs);
     iterItems(_vinf, m);
     os << "{\"var_types\": {";
     os << "\n  \"vars\": {\n" << _vinf.oss_vars.str() << "\n  },";
@@ -2348,21 +2473,27 @@ namespace MiniZinc {
   }
 
 
-  void output_model_interface(Env& env, Model* m, std::ostream& os) {
+  void output_model_interface(Env& env, Model* m, std::ostream& os, const std::vector<std::string>& skipDirs) {
     class IfcVisitor : public ItemVisitor {
     public:
       Env& env;
+      const std::vector<std::string> skip_dirs;
       bool had_input;
       bool had_output;
       bool had_add_to_output = false;
       std::ostringstream oss_input;
       std::ostringstream oss_output;
       std::string method;
-      IfcVisitor(Env& env0) : env(env0), had_input(false), had_output(false), method("sat") {}
+      bool output_item;
+      IfcVisitor(Env& env0, const std::vector<std::string>& skipDirs) : env(env0), skip_dirs(skipDirs), had_input(false), had_output(false), method("sat"), output_item(false) {}
       bool enter(Item* i) {
-        if (IncludeI* ii = i->dyn_cast<IncludeI>()) {
+        if (auto ii = i->dyn_cast<IncludeI>()) {
           std::string prefix = ii->m()->filepath().str().substr(0,ii->m()->filepath().size()-ii->f().size());
-          return (prefix.empty() || prefix == "./");
+          for (const auto & skip_dir : skip_dirs) {
+            if (prefix.substr(0, skip_dir.size()) == skip_dir) {
+              return false;
+            }
+          }
         }
         return true;
       }
@@ -2400,12 +2531,16 @@ namespace MiniZinc {
           case SolveI::ST_SAT: method = "sat"; break;
         }
       }
-    } _ifc(env);
+      void vOutputI(OutputI* oi) {
+        output_item = true;
+      }
+    } _ifc(env, skipDirs);
     iterItems(_ifc, m);
     os << "{\n  \"input\" : {\n" << _ifc.oss_input.str() << "\n  },\n  \"output\" : {\n" << _ifc.oss_output.str() << "\n  }";
     os << ",\n  \"method\": \"";
     os << _ifc.method;
     os << "\"";
+    os << ",\n  \"has_output_item\": " << (_ifc.output_item ? "true" : "false");
     os << "\n}\n";
   }
   

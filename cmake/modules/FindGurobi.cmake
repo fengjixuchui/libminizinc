@@ -4,15 +4,13 @@
 #  GUROBI_INCLUDE_DIRS - The GUROBI include directories
 #  GUROBI_LIBRARIES    - The libraries needed to use GUROBI
 #  GUROBI_COMPILE_FLAGS  - The definitions required to compile with GUROBI
-# User can set GUROBI_ROOT to the preferred installation prefix
-
-list(INSERT CMAKE_PREFIX_PATH 0 "${GUROBI_ROOT}" "$ENV{GUROBI_ROOT}")
+# User can set Gurobi_ROOT to the preferred installation prefix
 
 option(GUROBI_PLUGIN "Build Gurobi binding as a plugin" ON)
 
 set(GUROBI_COMPILE_FLAGS "-fPIC -fno-strict-aliasing -fexceptions -DNDEBUG")
 
-set(GUROBI_VERSIONS 811 810 801 752 702)
+set(GUROBI_VERSIONS 900 811 810 801 752 702)
 
 foreach(VERSION ${GUROBI_VERSIONS})
   list(APPEND GUROBI_DEFAULT_LOC "/opt/gurobi${VERSION}/linux64")
@@ -63,7 +61,6 @@ if(GUROBI_PLUGIN AND HAS_WINDOWS_H AND NOT HAS_DLFCN_H)
 endif()
 
 mark_as_advanced(GUROBI_INCLUDE GUROBI_LIBRARY)
-list(REMOVE_AT CMAKE_PREFIX_PATH 1 0)
 
 set(GUROBI_LIBRARIES ${GUROBI_LIBRARY})
 set(GUROBI_INCLUDE_DIRS ${GUROBI_INCLUDE})

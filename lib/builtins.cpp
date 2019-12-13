@@ -1189,7 +1189,8 @@ namespace MiniZinc {
     return static_cast<IntVal>(std::floor(eval_float(env,call->arg(0))));
   }
   IntVal b_round(EnvI& env, Call* call) {
-    return static_cast<IntVal>(eval_float(env,call->arg(0))+0.5);
+    /// Cast to int truncates, so cannot just add 0.5 and cast
+    return static_cast<IntVal>(std::round(eval_float(env,call->arg(0)).toDouble()));
   }
   FloatVal b_log10(EnvI& env, Call* call) {
     return std::log10(eval_float(env,call->arg(0)).toDouble());
@@ -1239,6 +1240,20 @@ namespace MiniZinc {
       return call->arg(2);
     StringLit* err = eval_par(env,call->arg(1))->cast<StringLit>();
     throw EvalError(env, call->arg(0)->loc(),"Assertion failed: "+err->v().str());
+  }
+
+  Expression* b_mzn_deprecate(EnvI& env, Call* call) {
+    assert(call->n_args()==4);
+    GCLock lock;
+    std::string fnName = eval_string(env, call->arg(0));
+    if (env.deprecationWarnings.find(fnName)==env.deprecationWarnings.end()) {
+      env.deprecationWarnings.insert(fnName);
+      env.dumpStack(env.errstream, false);
+      env.errstream << "  The function/predicate `"<< fnName;
+      env.errstream << "' was deprecated in MiniZinc version " << eval_string(env, call->arg(1));
+      env.errstream << ".\n  More information can be found at " << eval_string(env, call->arg(2)) << ".\n";
+    }
+    return call->arg(3);
   }
 
   bool b_abort(EnvI& env, Call* call) {
@@ -1781,6 +1796,69 @@ namespace MiniZinc {
     return al_sorted;
   }
   
+  Expression* b_inverse(EnvI& env, Call* call) {
+    assert(call->n_args()==1);
+    ArrayLit* al = eval_array_lit(env,call->arg(0));
+    if (al->size()==0)
+      return al;
+    int min_idx = al->min(0);
+    
+    std::vector<IntVal> ivs(al->size());
+    IntVal minVal = eval_int(env, (*al)[0]);
+    IntVal maxVal = minVal;
+    ivs[0] = minVal;
+    for (unsigned int i=1; i<al->size(); i++) {
+      IntVal ii = eval_int(env, (*al)[i]);
+      ivs[i] = ii;
+      minVal = std::min(minVal, ii);
+      maxVal = std::max(maxVal, ii);
+    }
+    if (maxVal-minVal+1 != al->size()) {
+      throw ResultUndefinedError(env, call->loc(), "inverse on non-contiguous set of values is undefined");
+    }
+    
+    std::vector<Expression*> inv(al->size());
+    std::vector<bool> used(al->size());
+    for (unsigned int i=0; i<ivs.size(); i++) {
+      used[(ivs[i]-minVal).toInt()] = true;
+      inv[(ivs[i]-minVal).toInt()]=IntLit::a(i+min_idx);
+    }
+    for (bool b : used) {
+      if (!b) {
+        throw ResultUndefinedError(env, call->loc(), "inverse on non-contiguous set of values is undefined");
+      }
+    }
+    ArrayLit* al_inv = new ArrayLit(al->loc(), inv, {{minVal.toInt(),maxVal.toInt()}});
+    al_inv->type(al->type());
+    return al_inv;
+  }
+
+  Expression* b_set_to_ranges_int(EnvI& env, Call* call) {
+    assert(call->n_args()==1);
+    IntSetVal* isv = eval_intset(env, call->arg(0));
+    std::vector<Expression*> v(isv->size()*2);
+    for (unsigned int i=0; i<isv->size(); i++) {
+      v[2*i] = IntLit::a(isv->min(i));
+      v[2*i+1] = IntLit::a(isv->max(i));
+    }
+    ArrayLit* al = new ArrayLit(call->loc().introduce(), v);
+    al->type(Type::parint(1));
+    return al;
+  }
+
+  Expression* b_set_to_ranges_float(EnvI& env, Call* call) {
+    assert(call->n_args()==1);
+    FloatSetVal* fsv = eval_floatset(env, call->arg(0));
+    std::vector<Expression*> v(fsv->size()*2);
+    for (unsigned int i=0; i<fsv->size(); i++) {
+      v[2*i] = FloatLit::a(fsv->min(i));
+      v[2*i+1] = FloatLit::a(fsv->max(i));
+    }
+    ArrayLit* al = new ArrayLit(call->loc().introduce(), v);
+    al->type(Type::parfloat(1));
+    return al;
+  }
+
   std::default_random_engine& rnd_generator(void) {
     // TODO: initiate with seed if given as annotation/in command line
     static std::default_random_engine g;
@@ -2517,6 +2595,24 @@ namespace MiniZinc {
       rb(env, m, constants().ids.assert, t, b_assert);
     }
     {
+      std::vector<Type> t(4);
+      t[0] = Type::parstring();
+      t[1] = Type::parstring();
+      t[2] = Type::parstring();
+      t[3] = Type::top();
+      rb(env, m, constants().ids.mzn_deprecate, t, b_mzn_deprecate);
+      t[3] = Type::vartop();
+      rb(env, m, constants().ids.mzn_deprecate, t, b_mzn_deprecate);
+      t[3] = Type::optvartop();
+      rb(env, m, constants().ids.mzn_deprecate, t, b_mzn_deprecate);
+      t[3] = Type::top(-1);
+      rb(env, m, constants().ids.mzn_deprecate, t, b_mzn_deprecate);
+      t[3] = Type::vartop(-1);
+      rb(env, m, constants().ids.mzn_deprecate, t, b_mzn_deprecate);
+      t[3] = Type::optvartop(-1);
+      rb(env, m, constants().ids.mzn_deprecate, t, b_mzn_deprecate);
+    }
+    {
       std::vector<Type> t(1);
       t[0] = Type::parstring();
       rb(env, m, ASTString("abort"), t, b_abort);
@@ -2632,6 +2728,18 @@ namespace MiniZinc {
     {
       std::vector<Type> t(1);
       t[0] = Type::varfloat();
+      t[0].ot(Type::OT_OPTIONAL);
+      rb(env, m, ASTString("lb"), t, b_lb_varoptfloat);
+    }
+    {
+      std::vector<Type> t(1);
+      t[0] = Type::varfloat();
+      t[0].ot(Type::OT_OPTIONAL);
+      rb(env, m, ASTString("ub"), t, b_ub_varoptfloat);
+    }
+    {
+      std::vector<Type> t(1);
+      t[0] = Type::varfloat();
       rb(env, m, ASTString("lb"), t, b_lb_varoptfloat);
     }
     {
@@ -2642,17 +2750,26 @@ namespace MiniZinc {
     {
       std::vector<Type> t(1);
       t[0] = Type::varfloat(-1);
+      t[0].ot(Type::OT_OPTIONAL);
       rb(env, m, ASTString("lb_array"), t, b_array_lb_float);
     }
     {
       std::vector<Type> t(1);
       t[0] = Type::varfloat(-1);
+      t[0].ot(Type::OT_OPTIONAL);
       rb(env, m, ASTString("ub_array"), t, b_array_ub_float);
     }
     {
       std::vector<Type> t(1);
       t[0] = Type::parsetint();
       rb(env, m, ASTString("card"), t, b_card);
+    }
+    {
+      std::vector<Type> t(1);
+      t[0] = Type::parsetint();
+      rb(env, m, ASTString("set_to_ranges"), t, b_set_to_ranges_int);
+      t[0] = Type::parsetfloat();
+      rb(env, m, ASTString("set_to_ranges"), t, b_set_to_ranges_float);
     }
     {
       std::vector<Type> t(1);
@@ -2886,6 +3003,11 @@ namespace MiniZinc {
       rb(env, m, ASTString("sort"), t, b_sort);
       rb(env, m, ASTString("arg_min"), t, b_arg_min_float);
       rb(env, m, ASTString("arg_max"), t, b_arg_max_float);
+    }
+    {
+      std::vector<Type> t(1);
+      t[0] = Type::parint(1);
+      rb(env, m, ASTString("inverse"), t, b_inverse, true);
     }
     {
      std::vector<Type> t(1);

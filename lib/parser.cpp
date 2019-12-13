@@ -188,6 +188,21 @@ namespace MiniZinc {
               FileUtils::file_exists(workingDir+"/"+f)) {
             err << "Warning: file " << f << " included from library, but also exists in current working directory" << endl;
           }
+          for (; i<includePaths.size(); i++) {
+            std::string deprecatedName = includePaths[i]+"/"+f+".deprecated.mzn";
+            if (FileUtils::file_exists(deprecatedName)) {
+              string deprecatedBaseName = FileUtils::base_name(deprecatedName);
+              Model* includedModel = new Model;
+              includedModel->setFilename(deprecatedBaseName);
+              files.push_back(ParseWorkItem(includedModel,NULL,"",deprecatedName));
+              seenModels.insert(pair<string,Model*>(deprecatedBaseName,includedModel));
+              Location loc(ASTString(deprecatedName),0,0,0,0);
+              IncludeI* inc = new IncludeI(loc,includedModel->filename());
+              inc->m(includedModel,true);
+              m->addItem(inc);
+              files.push_back(ParseWorkItem(includedModel,inc,deprecatedName,deprecatedBaseName));
+            }
+          }
           includePaths.pop_back();
         }
         if (!file.is_open()) {

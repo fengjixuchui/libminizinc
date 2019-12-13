@@ -383,7 +383,6 @@ namespace MiniZinc {
                 tv[i].ti(Type::TI_PAR);
               }
               FunctionI* decl = env.output->matchFn(env, rhs->id(), tv, false);
-              Type t;
               if (decl==NULL) {
                 FunctionI* origdecl = env.model->matchFn(env, rhs->id(), tv, false);
                 if (origdecl == NULL) {
@@ -402,6 +401,7 @@ namespace MiniZinc {
                   decl = origdecl;
                 }
               }
+              rhs->type(decl->rtype(env, tv, false));
               rhs->decl(decl);
             }
             outputVarDecls(env,nvi,it->second());
@@ -930,6 +930,13 @@ namespace MiniZinc {
               if (reallyFlat && env.output_vo_flat.find(reallyFlat) == -1)
                 env.output_vo_flat.add_idx(reallyFlat, env.output->size());
             }
+          } else {
+            if (vd->flat() == NULL && vdi->e()->e()!=NULL) {
+              // Need to process right hand side of variable, since it may contain
+              // identifiers that are only in the FlatZinc and that we would
+              // therefore fail to copy into the output model
+              outputVarDecls(env,vdi_copy,vdi->e()->e());
+            }
           }
           makePar(env,vdi_copy->e());
           env.output_vo.add_idx(vdi_copy, env.output->size());
@@ -1058,6 +1065,9 @@ namespace MiniZinc {
                     
                     outputVarDecls(e, item, al);
                     vd->e(copy(e,e.cmap,al));
+                    Type al_t(vd->e()->type());
+                    al_t.ti(Type::TI_PAR);
+                    vd->e()->type(al_t);
                   }
                 }
                 if (needOutputAnn) {
