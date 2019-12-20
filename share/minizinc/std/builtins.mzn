@@ -340,6 +340,10 @@ function var float: '/'(var float: x,var float: y) =
 function int:  count(array[$T] of bool: x) = sum([bool2int(y) | y in array1d(x)]);
 /** @group builtins.arithmetic Return number of true elments in array \a x */
 function var int:  count(array[$T] of var bool: x) = sum([bool2int(y) | y in array1d(x)]);
+/** @group builtins.arithmetic Return sum of elements in array \a x */
+function int:   sum(array[$T] of bool: x) = sum([bool2int(y)|y in array1d(x)]);
+/** @group builtins.arithmetic Return sum of elements in array \a x */
+function var int:   sum(array[$T] of var bool: x) = sum([bool2int(y)|y in array1d(x)]);
 
 /** @group builtins.arithmetic Return sum of elements in array \a x */
 function     int:   sum(array[$T] of     int: x);
@@ -816,7 +820,10 @@ function var set of int: '..'(var int: a, var int: b) ::promise_total =
 /** @group builtins.set Return the cardinality of the set \a x */
 function     int: card(    set of $T: x);
 /** @group builtins.set Return the cardinality of the set \a x */
-function var int: card(var set of int: x);
+function var int: card(var set of int: x) ::promise_total = let {
+    var 0..card(ub(x)): c;
+    constraint set_card(x,c);
+  } in c;
 
 /** @group builtins.set Return the union of the sets in array \a x */
 function     set of $U:  array_union(array[$T] of     set of $U: x);
@@ -1810,6 +1817,10 @@ at this point in evaluation. If all are fixed, return an array of their values, 
 function array[$U] of $T: fix(array[$U] of var opt $T: x);
 /** @group builtins.reflect Test if \a x is fixed */
 function bool: is_fixed(var opt $T: x);
+/** @group builtins.reflect Test if \a x is fixed */
+function bool: is_fixed(set of $T: x);
+/** @group builtins.reflect Test if \a x is fixed */
+function bool: is_fixed(var set of int: x);
 /** @group builtins.reflect Test if every element of array \a x is fixed */
 function bool: is_fixed(array[$U] of var opt $T: x);
 
@@ -3022,6 +3033,7 @@ include "count_leq.mzn";
 include "count_neq.mzn";
 include "count_gt.mzn";
 include "count_lt.mzn";
+include "count_fn.mzn";
 
 %-----------------------------------------------------------------------------%
 %-----------------------------------------------------------------------------%

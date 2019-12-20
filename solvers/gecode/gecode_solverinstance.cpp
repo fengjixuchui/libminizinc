@@ -267,11 +267,6 @@ namespace MiniZinc {
       registerConstraint("int_in", GecodeConstraints::p_int_in);
       registerConstraint("int_in_reif", GecodeConstraints::p_int_in_reif);
       registerConstraint("int_in_imp", GecodeConstraints::p_int_in_imp);
-      //#ifndef GECODE_HAS_SET_VARS
-      registerConstraint("set_in", GecodeConstraints::p_int_in);
-      registerConstraint("set_in_reif", GecodeConstraints::p_int_in_reif);
-      registerConstraint("set_in_imp", GecodeConstraints::p_int_in_imp);
-      //#endif
 
       registerConstraint("array_int_lt", GecodeConstraints::p_array_int_lt);
       registerConstraint("array_int_lq", GecodeConstraints::p_array_int_lq);
@@ -1480,7 +1475,7 @@ namespace MiniZinc {
         if(vds.find(name) != vds.end()) {
           VarDecl* nvd = vds[name];
           Type::BaseType bt = vd->type().bt();
-          if(bt == Type::BaseType::BT_INT) {
+          if(bt == Type::BaseType::BT_INT && vd->type().st()==Type::ST_PLAIN) {
             IntVar intvar = it->second.intVar(_current_space);
             const long long int l = intvar.min(), u = intvar.max();
 

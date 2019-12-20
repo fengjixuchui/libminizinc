@@ -120,11 +120,11 @@ predicate set_le(var set of int: x, var set of int: y) =
     set of int: U = ub(x) union ub(y);
     int: l = min(U);
     int: u = max(U);
-    array[U] of var bool: xb = [i in x | i in U];
+    array[l..u] of var bool: xb = [i in x | i in l..u];
     var l-1..u: xmax = max(x union {l-1});
-    array[U] of var bool: yb = [i in y | i in U];
+    array[l..u] of var bool: yb = [i in y | i in l..u];
     var l-1..u: ymax = max(y union {l-1});
-    array[U] of var bool: b; 
+    array[l..u] of var bool: b; 
     constraint forall(i in l..u-1) (
         b[i] = let {var 1..4: cmp = 2*xb[i] + yb[i] + 1} in
                    [b[i+1], xmax < i, ymax > i, b[i+1]][cmp]
@@ -137,11 +137,11 @@ predicate set_le_reif(var set of int: x, var set of int: y, var bool: r) =
     set of int: U = ub(x) union ub(y);
     int: l = min(U);
     int: u = max(U);
-    array[U] of var bool: xb = [i in x | i in U];
+    array[l..u] of var bool: xb = [i in x | i in l..u];
     var l-1..u: xmax = max(x union {l-1});
-    array[U] of var bool: yb = [i in y | i in U];
+    array[l..u] of var bool: yb = [i in y | i in l..u];
     var l-1..u: ymax = max(y union {l-1});
-    array[U] of var bool: b; 
+    array[l..u] of var bool: b; 
     constraint forall(i in l..u-1) (
         b[i] = let {var 1..4: cmp = 2*xb[i] + yb[i] + 1} in
                    [b[i+1], xmax < i, ymax > i, b[i+1]][cmp]
@@ -154,11 +154,11 @@ predicate set_le_imp(var set of int: x, var set of int: y, var bool: r) =
     set of int: U = ub(x) union ub(y);
     int: l = min(U);
     int: u = max(U);
-    array[U] of var bool: xb = [i in x | i in U];
+    array[l..u] of var bool: xb = [i in x | i in l..u];
     var l-1..u: xmax = max(x union {l-1});
-    array[U] of var bool: yb = [i in y | i in U];
+    array[l..u] of var bool: yb = [i in y | i in l..u];
     var l-1..u: ymax = max(y union {l-1});
-    array[U] of var bool: b; 
+    array[l..u] of var bool: b; 
     constraint forall(i in l..u-1) (
         b[i] = let {var 1..4: cmp = 2*xb[i] + yb[i] + 1} in
                    [b[i+1], xmax < i, ymax > i, b[i+1]][cmp]
@@ -171,11 +171,11 @@ predicate set_lt(var set of int: x, var set of int: y) ::promise_total =
     set of int: U = ub(x) union ub(y);
     int: l = min(U);
     int: u = max(U);
-    array[U] of var bool: xb = [i in x | i in U];
+    array[l..u] of var bool: xb = [i in x | i in l..u];
     var l-1..u: xmax = max(x union {l-1});
-    array[U] of var bool: yb = [i in y | i in U];
+    array[l..u] of var bool: yb = [i in y | i in l..u];
     var l-1..u: ymax = max(y union {l-1});
-    array[U] of var bool: b; 
+    array[l..u] of var bool: b; 
     constraint forall(i in l..u-1) (
         b[i] = let {var 1..4: cmp = 2*xb[i] + yb[i] + 1} in
                    [b[i+1], xmax < i, ymax > i, b[i+1]][cmp]
@@ -188,11 +188,11 @@ predicate set_lt_reif(var set of int: x, var set of int: y, var bool: r) ::promi
     set of int: U = ub(x) union ub(y);
     int: l = min(U);
     int: u = max(U);
-    array[U] of var bool: xb = [i in x | i in U];
+    array[l..u] of var bool: xb = [i in x | i in l..u];
     var l-1..u: xmax = max(x union {l-1});
-    array[U] of var bool: yb = [i in y | i in U];
+    array[l..u] of var bool: yb = [i in y | i in l..u];
     var l-1..u: ymax = max(y union {l-1});
-    array[U] of var bool: b; 
+    array[l..u] of var bool: b; 
     constraint forall(i in l..u-1) (
         b[i] = let {var 1..4: cmp = 2*xb[i] + yb[i] + 1} in
                    [b[i+1], xmax < i, ymax > i, b[i+1]][cmp]
@@ -205,11 +205,11 @@ predicate set_lt_imp(var set of int: x, var set of int: y, var bool: r) ::promis
     set of int: U = ub(x) union ub(y);
     int: l = min(U);
     int: u = max(U);
-    array[U] of var bool: xb = [i in x | i in U];
+    array[l..u] of var bool: xb = [i in x | i in l..u];
     var l-1..u: xmax = max(x union {l-1});
-    array[U] of var bool: yb = [i in y | i in U];
+    array[l..u] of var bool: yb = [i in y | i in l..u];
     var l-1..u: ymax = max(y union {l-1});
-    array[U] of var bool: b; 
+    array[l..u] of var bool: b; 
     constraint forall(i in l..u-1) (
         b[i] = let {var 1..4: cmp = 2*xb[i] + yb[i] + 1} in
                    [b[i+1], xmax < i, ymax > i, b[i+1]][cmp]
@@ -303,12 +303,11 @@ function var set of int: set_symdiff(var set of int: x, var set of int: y) ::pro
     );
   } in z;
 
-function var int: card(var set of int: x) ::promise_total =
+predicate set_card(var set of int: x, var int: c) =
   let {
     array[int] of var bool: bx = set2bools(x);
-    var 0..length(bx) : c;
-    constraint bool_lin_eq([1 | i in index_set(bx)],[bx[i] | i in index_set(bx)],c);
-  } in c;
+  } in
+    bool_lin_eq([1 | i in index_set(bx)],[bx[i] | i in index_set(bx)],c);
 
 predicate set_in(int: x, var set of int: y) ::promise_total =
   let {
@@ -354,7 +353,7 @@ predicate array_var_set_element(var int: x, array[int] of var set of int: y, var
           true
         else
           array1d( lb(x)..ub(x),
-            [ if k in ub(y[i]) then set2bools(y[i])[k] else false endif | i in dom(x) ] )[x]
+            [ if k in ub(y[i]) then set2bools(y[i])[k] else false endif | i in lb(x)..ub(x) ] )[x]
         endif
       else
         false
@@ -365,7 +364,7 @@ predicate array_var_set_element(var int: x, array[int] of var set of int: y, var
       false                     %% fail the constraint
     else
       not array1d( lb(x)..ub(x),
-        [ if k in ub(y[i]) then set2bools(y[i])[k] else false endif | i in dom(x) ] )[x]
+        [ if k in ub(y[i]) then set2bools(y[i])[k] else false endif | i in lb(x)..ub(x) ] )[x]
     endif
   );
 
@@ -386,7 +385,7 @@ predicate array_set_element(var int: x, array[int] of set of int: y, var set of 
           true
         else
           array1d( lb(x)..ub(x),
-            [ if k in ub(y[i]) then set2bools(y[i])[k] else false endif | i in dom(x) ] )[x]
+            [ if k in ub(y[i]) then set2bools(y[i])[k] else false endif | i in lb(x)..ub(x) ] )[x]
         endif
       else
         false
@@ -397,7 +396,7 @@ predicate array_set_element(var int: x, array[int] of set of int: y, var set of 
       false                     %% fail the constraint
     else
       not array1d( lb(x)..ub(x),
-        [ if k in ub(y[i]) then set2bools(y[i])[k] else false endif | i in dom(x) ] )[x]
+        [ if k in ub(y[i]) then set2bools(y[i])[k] else false endif | i in lb(x)..ub(x) ] )[x]
     endif
   );
 

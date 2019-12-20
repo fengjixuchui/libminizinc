@@ -522,6 +522,12 @@ namespace MiniZinc {
       }
     } else {
       vd->e(rhs);
+      if (rhs && hasBeenAdded) {
+        // This variable is being reused, so it won't be added to the model below.
+        // Therefore, we need to register that we changed the RHS, in order
+        // for the reference counts to be accurate.
+        env.vo_add_exp(vd);
+      }
     }
     assert(!vd->type().isbot());
     if (origVd && (origVd->id()->idn()!=-1 || origVd->toplevel())) {
@@ -2189,11 +2195,12 @@ namespace MiniZinc {
                 }
                 nc = new Call(c->loc().introduce(), nid, args);
               }
-              nc->decl(env.model->matchFn(env,nc,false));
-              if (nc->decl() == NULL) {
+              FunctionI* nc_decl = env.model->matchFn(env,nc,false);
+              if (nc_decl == NULL) {
                 throw InternalError("undeclared function or predicate "
                                     +nc->id().str());
               }
+              nc->decl(nc_decl);
               nc->type(nc->decl()->rtype(env,args,false));
               makeDefinedVar(vd, nc);
               flat_exp(env, Ctx(), nc, constants().var_true, constants().var_true);
