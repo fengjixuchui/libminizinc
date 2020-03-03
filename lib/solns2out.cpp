@@ -148,10 +148,12 @@ Solns2Out::DE& Solns2Out::findOutputVar( ASTString id ) {
 void Solns2Out::restoreDefaults() {
   for (unsigned int i=0; i<getModel()->size(); i++) {
     if (VarDeclI* vdi = (*getModel())[i]->dyn_cast<VarDeclI>()) {
-      GCLock lock;
-      auto& de = findOutputVar(vdi->e()->id()->str());
-      vdi->e()->e(de.second());
-      vdi->e()->evaluated(false);
+      if (vdi->e()->id()->idn()!=-1 || vdi->e()->id()->v()!="_mzn_solution_checker") {
+        GCLock lock;
+        auto& de = findOutputVar(vdi->e()->id()->str());
+        vdi->e()->e(de.second());
+        vdi->e()->evaluated(false);
+      }
     }
   }
   fNewSol2Print = false;
@@ -193,10 +195,27 @@ bool Solns2Out::evalOutput( const string& s_ExtraInfo ) {
   if ( !fNewSol2Print )
     return true;
   ostringstream oss;
-  if (!__evalOutput( oss ))
+  if ( !checkerModel.empty() ) {
+    auto& checkerStream = pEnv->envi().checker_output;
+    checkerStream.clear();
+    checkerStream.str("");
+    checkSolution(checkerStream);
+  }
+  if (!__evalOutput( oss )) {
     return false;
-  if ( !checkerModel.empty() )
-    checkSolution(oss);
+  }
+  {
+    auto& checkerStream = pEnv->envi().checker_output;
+    checkerStream.flush();
+    std::string line;
+    if (std::getline(checkerStream, line)) {
+      os << "% Solution checker report:\n";
+      os << "% " << line << "\n";
+      while (std::getline(checkerStream, line)) {
+        os << "% " << line << "\n";
+      }
+    }
+  }
   bool fNew=true;
   if ( _opt.flag_unique || _opt.flag_canonicalize ) {
     auto res = sSolsCanon.insert( oss.str() );
@@ -245,7 +264,7 @@ bool Solns2Out::evalOutput( const string& s_ExtraInfo ) {
   return true;
 }
 
-void Solns2Out::checkSolution(std::ostream& os) {
+void Solns2Out::checkSolution(std::ostream& oss) {
 #ifdef HAS_GECODE
 
   std::ostringstream checker;
@@ -255,45 +274,65 @@ void Solns2Out::checkSolution(std::ostream& os) {
     for (unsigned int i=0; i<getModel()->size(); i++) {
       if (VarDeclI* vdi = (*getModel())[i]->dyn_cast<VarDeclI>()) {
         if (vdi->e()->ann().contains(constants().ann.mzn_check_var)) {
+          checker << vdi->e()->id()->str() << " = ";
+          Expression* e = eval_par(getEnv()->envi(),vdi->e()->e());
+          ArrayLit* al = e->dyn_cast<ArrayLit>();
+          std::vector<Id*> enumids;
           if (Call* cev = vdi->e()->ann().getCall(constants().ann.mzn_check_enum_var)) {
-            checker << vdi->e()->id()->str() << "= to_enum(" << *cev->arg(0)->cast<Id>() << "," << *eval_par(getEnv()->envi(),vdi->e()->e()) << ");";
-          } else {
-            checker << vdi->e()->id()->str() << "=" << *eval_par(getEnv()->envi(),vdi->e()->e()) << ";";
+            ArrayLit* enumIdsAl = cev->arg(0)->cast<ArrayLit>();
+            for (int j=0; j<enumIdsAl->size(); j++) {
+              enumids.push_back((*enumIdsAl)[j]->dyn_cast<Id>());
+            }
           }
           
+          if (al) {
+            checker << "array" << al->dims() << "d(";
+            for (int i=0; i<al->dims(); i++) {
+              if (enumids.size() > 0 && enumids[i] != nullptr) {
+                checker << "to_enum(" << *enumids[i] << ",";
+              }
+              checker << al->min(i) << ".." << al->max(i);
+              if (enumids.size() > 0 && enumids[i] != nullptr) {
+                checker << ")";
+              }
+              checker << ",";
+            }
+          }
+          if (enumids.size() > 0 && enumids.back() != nullptr) {
+            checker << "to_enum(" << *enumids.back() << "," << *e << ")";
+          } else {
+            checker << *e;
+          }
+          if (al) {
+            checker << ")";
+          }
+          checker << ";\n";
         }
       }
     }
   }
-  
-  std::ostringstream oss_err;
-  MznSolver slv(oss_err,oss_err);
+
+  MznSolver slv(oss,oss);
   slv.s2out._opt.solution_separator = "";
   try {
     std::vector<std::string> args({"--solver","org.minizinc.gecode_presolver"});
     slv.run(args, checker.str(), "minizinc", "checker.mzc");
   } catch (const LocationException& e) {
-    oss_err << e.loc() << ":" << std::endl;
-    oss_err << e.what() << ": " << e.msg() << std::endl;
+    oss << e.loc() << ":" << std::endl;
+    oss << e.what() << ": " << e.msg() << std::endl;
   } catch (const Exception& e) {
     std::string what = e.what();
-    oss_err << what << (what.empty() ? "" : ": ") <<e.msg() << std::endl;
+    oss << what << (what.empty() ? "" : ": ") <<e.msg() << std::endl;
   }
   catch (const exception& e) {
-    oss_err << e.what() << std::endl;
+    oss << e.what() << std::endl;
   }
   catch (...) {
-    oss_err << "  UNKNOWN EXCEPTION." << std::endl;
-  }
-  std::istringstream iss(oss_err.str());
-  std::string line;
-  os << "% Solution checker report:\n";
-  while (std::getline(iss,line)) {
-    os << "% " << line << "\n";
+    oss << "  UNKNOWN EXCEPTION." << std::endl;
   }
   
 #else
-  os << "% solution checking not supported (need built-in Gecode)" << std::endl;
+  oss << "% solution checking not supported (need built-in Gecode)" << std::endl;
 #endif
 }
 

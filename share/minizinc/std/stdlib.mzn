@@ -40,7 +40,7 @@ annotation output_only;
 annotation mzn_check_var;
 
 /** @group annotations.general Declare that the annotated variable is required for checking solutions and has an enum type. */
-annotation mzn_check_enum_var(set of int);
+annotation mzn_check_enum_var(array[int] of set of int);
 
 /** @group annotations.general Declare a name for the annotated expression. */
 annotation mzn_expression_name(string);
@@ -450,6 +450,13 @@ function var opt bool: reverse_map_var_opt_bool(var bool: occ, var bool: d);
 function opt bool: reverse_map_var_opt_bool(bool: occ, bool: d) ::promise_total =
   if occ then d else <> endif;
 
+predicate mzn_reverse_map_var(var opt bool: x) =
+  let {
+    var bool : b = occurs_internal_bool(x);
+    var bool : dx = deopt_internal_bool(x);
+    constraint (x = reverse_map_var_opt_bool(b,dx)) :: is_reverse_map;
+  } in true;
+
 predicate bool_opt_eq(var opt bool: x, var opt bool: y) =
   deopt(x)=deopt(y) /\ occurs(x)=occurs(y);
 
@@ -543,15 +550,6 @@ function bool : occurs_int(var bool : x) ::promise_total = true;
 /** @group optiontypes.int Return value of \a x (assumes that \a x is not absent) */
 function var $$E : deopt(var opt $$E : x) ::promise_total = deopt_int(x);
 
-function var opt int: if_b_else_absent(var bool: b, var int: x) ::promise_total =
-  let {
-    var opt dom(x): y;
-    constraint not occurs(y);
-  } in if b then x else y endif;
-
-function var int: if_b_else_zero(var bool: b, var int: x) ::promise_total =
-  if b then x else 0 endif;
-
 function int : deopt_int(opt int : x) ::promise_total = deopt(x);
 function var int : deopt_int(var int : x) ::promise_total = x;
 function var int : deopt_int(var opt int : x) ::promise_total =
@@ -576,6 +574,13 @@ function var int : deopt_internal_int(var opt int : x) ::promise_total =
 function var opt int: reverse_map_var_opt_int(var bool: occ, var int: d);
 function opt int: reverse_map_var_opt_int(bool: occ, int: d) ::promise_total =
   if occ then d else <> endif;
+
+predicate mzn_reverse_map_var(var opt int: x) =
+  let {
+    var bool : b = occurs_internal_int(x);
+    var int : dx = deopt_internal_int(x);
+    constraint (x = reverse_map_var_opt_int(b,dx)) :: is_reverse_map;
+  } in true;
 
 predicate var_dom(var opt int:x, set of int: s) =
   let {
@@ -702,13 +707,21 @@ function var int: '+'(var opt int: x, var opt int: y) ::promise_total =
 function int: '+'(opt int: x, opt int: y) ::promise_total =
   if occurs(x) then deopt(x) else 0 endif + if occurs(y) then deopt(y) else 0 endif;
 
-/** @group optiontypes.int Optional subtraction. Return difference of \a x and \a y, with absent replaced by 0. */
-function var int: '-'(var opt int: x, var opt int: y) ::promise_total =
-  if occurs(x) then deopt(x) else 0 endif - if occurs(y) then deopt(y) else 0 endif;
+/** @group optiontypes.int Optional subtraction. Return absent if \a x is absent, \a x if \a y is absent,
+  difference of \a x and \a y if both are present. */
+function var opt int: '-'(var opt int: x, var opt int: y) ::promise_total =
+  if absent(x) then <> elseif absent(y) then deopt(x) else deopt(x)-deopt(y) endif;
 
-/** @group optiontypes.int Optional subtraction. Return difference of \a x and \a y, with absent replaced by 0. */
-function int: '-'(opt int: x, opt int: y) ::promise_total =
-  if occurs(x) then deopt(x) else 0 endif - if occurs(y) then deopt(y) else 0 endif;
+function var int: '-'(var int: x, var opt int: y) ::promise_total =
+  if absent(y) then x else x-deopt(y) endif;
+
+/** @group optiontypes.int Optional subtraction. Return absent if \a x is absent, \a x if \a y is absent,
+  difference of \a x and \a y if both are present. */
+function opt int: '-'(opt int: x, opt int: y) ::promise_total =
+  if absent(x) then <> elseif absent(y) then deopt(x) else deopt(x)-deopt(y) endif;
+
+function int: '-'(int: x, opt int: y) ::promise_total =
+  if absent(y) then x else x-deopt(y) endif;
 
 /** @group optiontypes.int Optional multiplication. Return product of \a x and \a y, with absent replaced by 1. */
 function var int: '*'(var opt int: x, var opt int: y) ::promise_total =
@@ -718,21 +731,31 @@ function var int: '*'(var opt int: x, var opt int: y) ::promise_total =
 function int: '*'(opt int: x, opt int: y) ::promise_total =
   if occurs(x) then deopt(x) else 1 endif * if occurs(y) then deopt(y) else 1 endif;
 
-/** @group optiontypes.int Optional division. Return \a x div \a y, with absent replaced by 1. */
-function var int: 'div'(var opt int: x, var opt int: y) ::promise_total =
-  if occurs(x) then deopt(x) else 1 endif div if occurs(y) then deopt(y) else 1 endif;
+/** @group optiontypes.int Optional division. Return absent if \a x is absent, \a x if \a y is absent,
+  \a x divided by \a y if both are present. */
+function var opt int: 'div'(var opt int: x, var opt int: y) =
+  if absent(x) then <> elseif absent(y) then deopt(x) else deopt(x) div deopt(y) endif;
 
-/** @group optiontypes.int Optional division. Return \a x div \a y, with absent replaced by 1. */
-function int: 'div'(opt int: x, opt int: y) ::promise_total =
-  if occurs(x) then deopt(x) else 1 endif div if occurs(y) then deopt(y) else 1 endif;
+function var int: 'div'(var int: x, var opt int: y) =
+  if absent(y) then x else x div deopt(y) endif;
 
-/** @group optiontypes.int Optional modulo. Return \a x mod \a y, with absent replaced by 1. */
-function var int: 'mod'(var opt int: x, var opt int: y) ::promise_total =
-  if occurs(x) then deopt(x) else 1 endif mod if occurs(y) then deopt(y) else 1 endif;
+/** @group optiontypes.int Optional division. Return absent if \a x is absent, \a x if \a y is absent,
+  \a x divided by \a y if both are present. */
+function opt int: 'div'(opt int: x, opt int: y) =
+  if absent(x) then <> elseif absent(y) then deopt(x) else deopt(x) div deopt(y) endif;
 
-/** @group optiontypes.int Optional modulo. Return \a x mod \a y, with absent replaced by 1. */
-function int: 'mod'(opt int: x, opt int: y) ::promise_total =
-  if occurs(x) then deopt(x) else 1 endif mod if occurs(y) then deopt(y) else 1 endif;
+function int: 'div'(int: x, opt int: y) =
+  if absent(y) then x else x div deopt(y) endif;
+
+/** @group optiontypes.int Optional modulo. Return absent if \a x or \a y is absent,
+  \a x modulo \a y if both are present. */
+function var opt int: 'mod'(var opt int: x, var opt int: y) =
+  if occurs(x) /\ occurs(y) then deopt(x) mod deopt(y) else <> endif;
+
+/** @group optiontypes.int Optional modulo. Return absent if \a x or \a y is absent,
+  \a x modulo \a y if both are present. */
+function opt int: 'mod'(opt int: x, opt int: y) =
+  if occurs(x) /\ occurs(y) then deopt(x) mod deopt(y) else <> endif;
 
 /** @group optiontypes.int Return sum of non-absent elements of \a x. */
 function var int: sum(array[int] of var opt int: x) =
@@ -825,15 +848,6 @@ function bool : occurs_float(var bool : x) ::promise_total = true;
 /** @group optiontypes.float Return value of \a x (assumes that \a x is not absent) */
 function var float : deopt(var opt float : x) ::promise_total = deopt_float(x);
 
-function var opt float: if_b_else_absent(var bool: b, var float: x) ::promise_total =
-  let {
-    var opt lb(x)..ub(x): y;
-    constraint not occurs(y);
-  } in if b then x else y endif;
-
-function var float: if_b_else_zero(var bool: b, var float: x) ::promise_total =
-  if b then x else 0.0 endif;
-
 function var float : deopt_float(var float : x) ::promise_total = x;
 function var float : deopt_float(var opt float : x) ::promise_total =
   let {
@@ -860,6 +874,13 @@ function var float : deopt_internal_float(var opt float : x) ::promise_total =
 function var opt float: reverse_map_var_opt_float(var bool: occ, var float: d); % :NOTE: Must define in cpp?
 function opt float: reverse_map_var_opt_float(bool: occ, float: d) ::promise_total =
   if occ then d else <> endif;
+
+predicate mzn_reverse_map_var(var opt float: x) =
+  let {
+    var bool : b = occurs_internal_float(x);
+    var float : dx = deopt_internal_float(x);
+    constraint (x = reverse_map_var_opt_float(b,dx)) :: is_reverse_map;
+  } in true;
 
 % :NOTE: does it apply to float?
 /*
@@ -1000,13 +1021,21 @@ function var float: '+'(var opt float: x, var opt float: y) ::promise_total =
 function float: '+'(opt float: x, opt float: y) ::promise_total =
   if occurs(x) then deopt(x) else 0 endif + if occurs(y) then deopt(y) else 0 endif;
 
-/** @group optiontypes.float Optional subtraction. Return difference of \a x and \a y, with absent replaced by 0. */
-function var float: '-'(var opt float: x, var opt float: y) ::promise_total =
-  if occurs(x) then deopt(x) else 0 endif - if occurs(y) then deopt(y) else 0 endif;
+/** @group optiontypes.float Optional subtraction. Return absent if \a x is absent, \a x if \a y is absent,
+  difference of \a x and \a y if both are present. */
+function var opt float: '-'(var opt float: x, var opt float: y) ::promise_total =
+  if absent(x) then <> elseif absent(y) then deopt(x) else deopt(x)-deopt(y) endif;
 
-/** @group optiontypes.float Optional subtraction. Return difference of \a x and \a y, with absent replaced by 0. */
-function float: '-'(opt float: x, opt float: y) ::promise_total =
-  if occurs(x) then deopt(x) else 0 endif - if occurs(y) then deopt(y) else 0 endif;
+function var float: '-'(var float: x, var opt float: y) ::promise_total =
+  if absent(y) then x else x-deopt(y) endif;
+
+/** @group optiontypes.float Optional subtraction. Return absent if \a x is absent, \a x if \a y is absent,
+  difference of \a x and \a y if both are present. */
+function opt float: '-'(opt float: x, opt float: y) ::promise_total =
+  if absent(x) then <> elseif absent(y) then deopt(x) else deopt(x)-deopt(y) endif;
+
+function float: '-'(float: x, opt float: y) ::promise_total =
+  if absent(y) then x else x-deopt(y) endif;
 
 /** @group optiontypes.float Optional multiplication. Return product of \a x and \a y, with absent replaced by 1. */
 function var float: '*'(var opt float: x, var opt float: y) ::promise_total =
@@ -1016,21 +1045,21 @@ function var float: '*'(var opt float: x, var opt float: y) ::promise_total =
 function float: '*'(opt float: x, opt float: y) ::promise_total =
   if occurs(x) then deopt(x) else 1 endif * if occurs(y) then deopt(y) else 1 endif;
 
-/** @group optiontypes.float Optional division. Return \a x div \a y, with absent replaced by 1. */
-function var float: 'div'(var opt float: x, var opt float: y) ::promise_total =
-  if occurs(x) then deopt(x) else 1 endif div if occurs(y) then deopt(y) else 1 endif;
+/** @group optiontypes.float Optional division. Return absent if \a x is absent, \a x if \a y is absent,
+  \a x divided by \a y if both are present. */
+function var opt float: '/'(var opt float: x, var opt float: y) =
+  if absent(x) then <> elseif absent(y) then deopt(x) else deopt(x) / deopt(y) endif;
 
-/** @group optiontypes.float Optional division. Return \a x div \a y, with absent replaced by 1. */
-function float: 'div'(opt float: x, opt float: y) ::promise_total =
-  if occurs(x) then deopt(x) else 1 endif div if occurs(y) then deopt(y) else 1 endif;
+function var float: '/'(var float: x, var opt float: y) =
+  if absent(y) then x else x / deopt(y) endif;
 
-/** @group optiontypes.float Optional modulo. Return \a x mod \a y, with absent replaced by 1. */
-function var float: 'mod'(var opt float: x, var opt float: y) ::promise_total =
-  if occurs(x) then deopt(x) else 1 endif mod if occurs(y) then deopt(y) else 1 endif;
+/** @group optiontypes.float Optional division. Return absent if \a x is absent, \a x if \a y is absent,
+  \a x divided by \a y if both are present. */
+function opt float: '/'(opt float: x, opt float: y) =
+  if absent(x) then <> elseif absent(y) then deopt(x) else deopt(x) / deopt(y) endif;
 
-/** @group optiontypes.float Optional modulo. Return \a x mod \a y, with absent replaced by 1. */
-function float: 'mod'(opt float: x, opt float: y) ::promise_total =
-  if occurs(x) then deopt(x) else 1 endif mod if occurs(y) then deopt(y) else 1 endif;
+function float: '/'(float: x, opt float: y) =
+  if absent(y) then x else x / deopt(y) endif;
 
 /** @group optiontypes.float Return sum of non-absent elements of \a x. */
 function var float: sum(array[int] of var opt float: x) =

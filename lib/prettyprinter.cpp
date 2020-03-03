@@ -236,29 +236,46 @@ namespace MiniZinc {
         {
           const SetLit& sl = *e->cast<SetLit>();
           if (sl.isv()) {
-            if (sl.isv()->size()==0) {
-              os << (_flatZinc ? "1..0" : "{}");
-            } else if (sl.isv()->size()==1) {
-              os << sl.isv()->min(0) << ".." << sl.isv()->max(0);
-            } else {
-              if (!sl.isv()->min(0).isFinite())
-                os << sl.isv()->min(0) << ".." << sl.isv()->max(0) << "++";
-              os << "{";
-              for (IntSetRanges isr(sl.isv()); isr();) {
-                if (isr.min().isFinite() && isr.max().isFinite()) {
-                  for (IntVal i=isr.min(); i<=isr.max(); i++) {
-                    os << i;
-                    if (i<isr.max())
-                      os << ",";
+            if (sl.type().bt()==Type::BT_BOOL) {
+              if (sl.isv()->size()==0) {
+                os << (_flatZinc ? "true..false" : "{}");
+              } else {
+                os << "{";
+                if (sl.isv()->min()==0) {
+                  if (sl.isv()->max()==0) {
+                    os << "false";
+                  } else {
+                    os << "false,true";
                   }
-                  ++isr;
-                  if (isr())
-                    os << ",";
+                } else {
+                  os << "true";
                 }
+                os << "}";
               }
-              os << "}";
-              if (!sl.isv()->max(sl.isv()->size()-1).isFinite())
-                os << "++" << sl.isv()->min(sl.isv()->size()-1) << ".." << sl.isv()->max(sl.isv()->size()-1);
+            } else {
+              if (sl.isv()->size()==0) {
+                os << (_flatZinc ? "1..0" : "{}");
+              } else if (sl.isv()->size()==1) {
+                os << sl.isv()->min(0) << ".." << sl.isv()->max(0);
+              } else {
+                if (!sl.isv()->min(0).isFinite())
+                  os << sl.isv()->min(0) << ".." << sl.isv()->max(0) << " union ";
+                os << "{";
+                bool first = true;
+                for (IntSetRanges isr(sl.isv()); isr(); ++isr) {
+                  if (isr.min().isFinite() && isr.max().isFinite()) {
+                    for (IntVal i=isr.min(); i<=isr.max(); i++) {
+                      if (!first)
+                        os << ",";
+                      first = false;
+                      os << i;
+                    }
+                  }
+                }
+                os << "}";
+                if (!sl.isv()->max(sl.isv()->size()-1).isFinite())
+                  os << " union " << sl.isv()->min(sl.isv()->size()-1) << ".." << sl.isv()->max(sl.isv()->size()-1);
+              }
             }
           } else if (sl.fsv()) {
             if (sl.fsv()->size()==0) {
@@ -289,7 +306,7 @@ namespace MiniZinc {
                 bool first = true;
                 for (FloatSetRanges isr(sl.fsv()); isr(); ++isr) {
                   if (!first)
-                    os << "++";
+                    os << " union ";
                   first = false;
                   ppFloatVal(os, isr.min());
                   os << "..";
@@ -1125,27 +1142,43 @@ namespace MiniZinc {
     ret mapSetLit(const SetLit& sl) {
       DocumentList* dl;
       if (sl.isv()) {
-        if (sl.isv()->size()==0) {
-          dl = new DocumentList("1..0","","");
-        } else if (sl.isv()->size()==1) {
-          dl = new DocumentList("", "..", "");
-          {
-            std::ostringstream oss;
-            oss << sl.isv()->min(0);
-            dl->addDocumentToList(new StringDocument(oss.str()));
-          }
-          {
-            std::ostringstream oss;
-            oss << sl.isv()->max(0);
-            dl->addDocumentToList(new StringDocument(oss.str()));
+        if (sl.type().bt()==Type::BT_BOOL) {
+          if (sl.isv()->size()==0) {
+            dl = new DocumentList("true..false","","");
+          } else {
+            if (sl.isv()->min()==0) {
+              if (sl.isv()->max()==0) {
+                dl = new DocumentList("{false}","","");
+              } else {
+                dl = new DocumentList("{false,true}","","");
+              }
+            } else {
+              dl = new DocumentList("{true}","","");
+            }
           }
         } else {
-          dl = new DocumentList("{", ", ", "}", true);
-          IntSetRanges isr(sl.isv());
-          for (Ranges::ToValues<IntSetRanges> isv(isr); isv(); ++isv) {
-            std::ostringstream oss;
-            oss << isv.val();
-            dl->addDocumentToList(new StringDocument(oss.str()));
+          if (sl.isv()->size()==0) {
+            dl = new DocumentList("1..0","","");
+          } else if (sl.isv()->size()==1) {
+            dl = new DocumentList("", "..", "");
+            {
+              std::ostringstream oss;
+              oss << sl.isv()->min(0);
+              dl->addDocumentToList(new StringDocument(oss.str()));
+            }
+            {
+              std::ostringstream oss;
+              oss << sl.isv()->max(0);
+              dl->addDocumentToList(new StringDocument(oss.str()));
+            }
+          } else {
+            dl = new DocumentList("{", ", ", "}", true);
+            IntSetRanges isr(sl.isv());
+            for (Ranges::ToValues<IntSetRanges> isv(isr); isv(); ++isv) {
+              std::ostringstream oss;
+              oss << isv.val();
+              dl->addDocumentToList(new StringDocument(oss.str()));
+            }
           }
         }
       } else if (sl.fsv()) {
@@ -1164,7 +1197,7 @@ namespace MiniZinc {
             dl->addDocumentToList(new StringDocument(oss.str()));
           }
         } else {
-          dl = new DocumentList("", "++", "", true);
+          dl = new DocumentList("", " union ", "", true);
           FloatSetRanges fsr(sl.fsv());
           for (; fsr(); ++fsr) {
             std::ostringstream oss;

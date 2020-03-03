@@ -11,6 +11,8 @@
 
 #include <minizinc/flat_exp.hh>
 
+#include <list>
+
 namespace MiniZinc {
 
   ASTString opToBuiltin(Expression* op_lhs, Expression* op_rhs, BinOpType bot) {
@@ -127,6 +129,67 @@ namespace MiniZinc {
         return builtin+"and";
       case BOT_XOR:
         return constants().ids.bool_xor;
+      default:
+        assert(false); return ASTString("");
+    }
+  }
+
+  ASTString opToId(BinOpType bot) {
+    switch (bot) {
+      case BOT_PLUS:
+        return ASTString("'+'");
+      case BOT_MINUS:
+        return ASTString("'-'");
+      case BOT_MULT:
+        return ASTString("'*'");
+      case BOT_DIV:
+        return ASTString("'/'");
+      case BOT_IDIV:
+        return ASTString("'div'");
+      case BOT_MOD:
+        return ASTString("'mod'");
+      case BOT_LE:
+        return ASTString("'<'");
+      case BOT_LQ:
+        return ASTString("'<='");
+      case BOT_GR:
+        return ASTString("'>'");
+      case BOT_GQ:
+        return ASTString("'>='");
+      case BOT_EQ:
+        return ASTString("'='");
+      case BOT_NQ:
+        return ASTString("'!='");
+      case BOT_IN:
+        return ASTString("'in'");
+      case BOT_SUBSET:
+        return ASTString("'subset'");
+      case BOT_SUPERSET:
+        return ASTString("'superset'");
+      case BOT_UNION:
+        return ASTString("'union'");
+      case BOT_DIFF:
+        return ASTString("'diff'");
+      case BOT_SYMDIFF:
+        return ASTString("'symdiff'");
+      case BOT_INTERSECT:
+        return ASTString("'intersect'");
+      case BOT_PLUSPLUS:
+        return ASTString("'++'");
+      case BOT_DOTDOT:
+        return ASTString("'..'");
+      case BOT_EQUIV:
+        return ASTString("'<->'");
+      case BOT_IMPL:
+        return ASTString("'->'");
+      case BOT_RIMPL:
+        return ASTString("'<-'");
+      case BOT_OR:
+        return ASTString("'\\/'");
+      case BOT_AND:
+        return ASTString("'/\\'");
+      case BOT_XOR:
+        return ASTString("'xor'");
       default:
         assert(false); return ASTString("");
     }
@@ -271,35 +334,40 @@ namespace MiniZinc {
     assert(bot == BOT_AND || bot == BOT_OR);
     BinOpType negbot = (bot == BOT_AND ? BOT_OR : BOT_AND);
     typedef std::pair<Expression*,bool> arg_literal;
-    std::vector<arg_literal> bo_args(2);
-    bo_args[0] = arg_literal(bo->lhs(), !negateArgs);
-    bo_args[1] = arg_literal(bo->rhs(), !negateArgs);
+    typedef std::list<arg_literal> arg_literal_l;
+    arg_literal_l bo_args({arg_literal(bo->lhs(), !negateArgs), arg_literal(bo->rhs(), !negateArgs)});
     std::vector<Expression*> output_pos;
     std::vector<Expression*> output_neg;
-    unsigned int processed = 0;
-    while (processed < bo_args.size()) {
-      BinOp* bo_arg = bo_args[processed].first->dyn_cast<BinOp>();
-      UnOp* uo_arg = bo_args[processed].first->dyn_cast<UnOp>();
-      bool positive = bo_args[processed].second;
+    arg_literal_l::iterator i = bo_args.begin();
+    while (i != bo_args.end()) {
+      BinOp* bo_arg = i->first->dyn_cast<BinOp>();
+      UnOp* uo_arg = i->first->dyn_cast<UnOp>();
+      bool positive = i->second;
       if (bo_arg && positive && bo_arg->op() == bot) {
-        bo_args[processed].first = bo_arg->lhs();
-        bo_args.push_back(arg_literal(bo_arg->rhs(),true));
+        i->first = bo_arg->lhs();
+        i++;
+        bo_args.insert(i, arg_literal(bo_arg->rhs(),true));
+        i--;
+        i--;
       } else if (bo_arg && !positive && bo_arg->op() == negbot) {
-        bo_args[processed].first = bo_arg->lhs();
-        bo_args.push_back(arg_literal(bo_arg->rhs(),false));
+        i->first = bo_arg->lhs();
+        i++;
+        bo_args.insert(i, arg_literal(bo_arg->rhs(),false));
+        i--;
+        i--;
       } else if (uo_arg && !positive && uo_arg->op() == UOT_NOT) {
-        bo_args[processed].first = uo_arg->e();
-        bo_args[processed].second = true;
+        i->first = uo_arg->e();
+        i->second = true;
       } else if (bot==BOT_OR && uo_arg && positive && uo_arg->op() == UOT_NOT) {
         output_neg.push_back(uo_arg->e());
-        processed++;
+        i++;
       } else {
         if (positive) {
-          output_pos.push_back(bo_args[processed].first);
+          output_pos.push_back(i->first);
         } else {
-          output_neg.push_back(bo_args[processed].first);
+          output_neg.push_back(i->first);
         }
-        processed++;
+        i++;
       }
     }
     Call* c;
@@ -868,7 +936,7 @@ namespace MiniZinc {
         std::vector<Expression*> args(2);
         args[0] = e0.r(); args[1] = e1.r();
         Call* cc;
-        if (bo->decl()) {
+        if (!isBuiltin) {
           cc = new Call(bo->loc().introduce(),bo->opToString(),args);
         } else {
           cc = new Call(bo->loc().introduce(),opToBuiltin(args[0],args[1],bot),args);
@@ -918,7 +986,7 @@ namespace MiniZinc {
             Expression* e_todo = todo.back();
             todo.pop_back();
             BinOp* e_bo = e_todo->dyn_cast<BinOp>();
-            if (e_bo && e_bo->op()==BOT_AND) {
+            if (e_bo && e_bo->op() == (negArgs ? BOT_OR : BOT_AND)) {
               todo.push_back(e_bo->rhs());
               todo.push_back(e_bo->lhs());
             } else {
@@ -1052,7 +1120,7 @@ namespace MiniZinc {
           if (!boe0->type().isopt() && istrue(env, boe1)) {
             return flat_exp(env, ctx, boe0, r, b);
           }
-          if (r && r==constants().var_true) {
+          if (!boe0->type().isopt() && !boe1->type().isopt() && r && r==constants().var_true) {
             if (boe1->type().ispar() || boe1->isa<Id>())
               std::swap(boe0,boe1);
             if (istrue(env,boe0)) {
@@ -1328,7 +1396,7 @@ namespace MiniZinc {
             flatten_linexp_binop<FloatLit>(env,ctx,r,b,ret,le0,le1,bot,doubleNeg,ees,args,callid);
           }
         } else {
-          if (bo->decl()==NULL) {
+          if (isBuiltin) {
             switch (bot) {
               case BOT_GR:
                 std::swap(e0,e1);
@@ -1351,8 +1419,8 @@ namespace MiniZinc {
           
           if (callid=="") {
             assert(args.size()==2);
-            if (bo->decl()) {
-              callid = bo->decl()->id();
+            if (!isBuiltin) {
+              callid = opToId(bot);
             } else {
               callid = opToBuiltin(args[0](),args[1](),bot);
             }

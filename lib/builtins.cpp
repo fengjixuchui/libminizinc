@@ -694,7 +694,7 @@ namespace MiniZinc {
     return isv->max();
   }
   IntSetVal* b_lb_set(EnvI& env, Call* e) {
-    Expression* ee = eval_par(env, e->arg(0));
+    Expression* ee = follow_id_to_value(e->arg(0));
     if (ee->type().ispar()) {
       return eval_intset(env, ee);
     }
@@ -1099,12 +1099,12 @@ namespace MiniZinc {
   
   Expression* exp_is_fixed(EnvI& env, Expression* e) {
     GCLock lock;
-    Expression* cur = eval_par(env,e);
+    Expression* cur = e;
     for (;;) {
       if (cur==NULL)
         return NULL;
       if (cur->type().ispar())
-        return cur;
+        return eval_par(env, cur);
       switch (cur->eid()) {
         case Expression::E_ID:
           cur = cur->cast<Id>()->decl();
@@ -1438,7 +1438,7 @@ namespace MiniZinc {
   }
   
   Expression* b_outputJSON(EnvI& env, Call* call) {
-    return createJSONOutput(env, false, false);
+    return createJSONOutput(env, false, false, false);
   }
   Expression* b_outputJSONParameters(EnvI& env, Call* call) {
     std::vector<Expression*> outputVars;
@@ -2325,6 +2325,16 @@ namespace MiniZinc {
     throw FlatteningError(env, call->loc(), "MiniZinc was compiled without built-in Gecode, cannot parse regular expression");
 #endif
   }
+
+  Expression* b_show_checker_output(EnvI& env, Call* call) {
+    // Get checker output
+    env.checker_output.flush();
+    std::string output = env.checker_output.str();
+    // Reset checker output
+    env.checker_output.str("");
+    env.checker_output.clear();
+    return new StringLit(call->loc().introduce(), output);
+  }
   
   void registerBuiltins(Env& e) {
     EnvI& env = e.envi();
@@ -3167,8 +3177,11 @@ namespace MiniZinc {
       t[1] = Type::parstring();
       rb(env, m, ASTString("fzn_regular"),t,b_regular_from_string,true);
     }
+    {
+      rb(env, m, ASTString("showCheckerOutput"), {}, b_show_checker_output);
+    }
   }
-  
+
 }
 
 

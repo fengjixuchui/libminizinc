@@ -80,7 +80,7 @@ namespace {
 #endif
 
 const vector<string>& CPLEXDLLs(void) {
-  static const vector<string> sCPLEXDLLs = { "cplex1290", "cplex1280", "cplex1270" };
+  static const vector<string> sCPLEXDLLs = { "cplex12100", "cplex1290", "cplex1280", "cplex1270" };
   return sCPLEXDLLs;
 }
 
@@ -246,18 +246,18 @@ string MIP_cplex_wrapper::getVersion(MiniZinc::SolverInstanceBase::Options* opt)
   return v;
 }
 
-std::string MIP_cplex_wrapper::needDllFlag(void) {
+vector<string> MIP_cplex_wrapper::getRequiredFlags(void) {
   int status;
   Options options;
   try {
     MIP_cplex_wrapper mcw(&options);
     CPXENVptr env = mcw.dll_CPXopenCPLEX (&status);
     if (env) {
-      return "";
+      return {};
     }
   } catch (MiniZinc::InternalError&) {
   }
-  return "--cplex-dll";
+  return { "--cplex-dll" };
 }
 
 string MIP_cplex_wrapper::getId() {

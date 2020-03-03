@@ -250,14 +250,12 @@ namespace MiniZinc {
   /// Check if \a e is NULL or true
   bool istrue(EnvI& env, Expression* e) {
     GCLock lock;
-    return e==NULL || (e->type().ispar() && e->type().isbool()
-                       && eval_bool(env,e));
+    return e==NULL || (e->type() == Type::parbool() && eval_bool(env,e));
   }  
   /// Check if \a e is non-NULL and false
   bool isfalse(EnvI& env, Expression* e) {
     GCLock lock;
-    return e!=NULL && e->type().ispar() && e->type().isbool()
-           && !eval_bool(env,e);
+    return e!=NULL && e->type() == Type::parbool() && !eval_bool(env,e);
   }  
 
   EE flat_exp(EnvI& env, Ctx ctx, Expression* e, VarDecl* r, VarDecl* b);
@@ -1290,15 +1288,22 @@ namespace MiniZinc {
           vd_t.ti(Type::TI_PAR);
           vd_output->type(vd_t);
           vd_output->ti()->type(vd_t);          
-          _output->addItem(new VarDeclI(Location().introduce(), vd_output));
 
           if (dims) {
+            std::vector<TypeInst*> ranges(dims->size());
             s << "array" << dims->size() << "d(";
             for (unsigned int i=0; i<dims->size(); i++) {
               IntSetVal* idxset = eval_intset(envi,(*dims)[i]);
+              ranges[i] = new TypeInst(Location().introduce(), Type(), new SetLit(Location().introduce(), idxset));
               s << *idxset << ",";
             }
+            Type t = vd_t;
+            vd_t.dim(dims->size());
+            vd_output->type(t);
+            vd_output->ti(new TypeInst(Location().introduce(), vd_t, ranges));
           }
+          _output->addItem(new VarDeclI(Location().introduce(), vd_output));
+
           StringLit* sl = new StringLit(Location().introduce(),s.str());
           outputVars.push_back(sl);
 
@@ -1921,7 +1926,9 @@ namespace MiniZinc {
               ret = vd->id();
             }
             Id* vde_id = Expression::dyn_cast<Id>(vd->e());
-            if (vde_id && vde_id->decl()->ti()->domain()==NULL) {
+            if (vde_id == constants().absent) {
+              // no need to do anything
+            } else if (vde_id && vde_id->decl()->ti()->domain()==NULL) {
               if (vd->ti()->domain()) {
                 GCLock lock;
                 Expression* vd_dom = eval_par(env, vd->ti()->domain());
@@ -2671,23 +2678,7 @@ namespace MiniZinc {
                 EE ee = flat_exp(env, Ctx(), v->e()->e(), NULL, constants().var_true);
                 v->e()->e(ee.r());
               }
-              if (v->e()->type().dim() > 0) {
-                checkIndexSets(env,v->e(), v->e()->e());
-                if (v->e()->ti()->domain() != NULL) {
-                  ArrayLit* al = eval_array_lit(env,v->e()->e());
-                  for (unsigned int i=0; i<al->size(); i++) {
-                    if (!checkParDomain(env,(*al)[i], v->e()->ti()->domain())) {
-                      throw EvalError(env, v_loc, "parameter value out of range");
-                    }
-                  }
-                }
-              } else {
-                if (v->e()->ti()->domain() != NULL) {
-                  if (!checkParDomain(env,v->e()->e(), v->e()->ti()->domain())) {
-                    throw EvalError(env, v_loc, "parameter value out of range");
-                  }
-                }
-              }
+              checkParDeclaration(env, v->e());
             }
           }
         }
@@ -2740,7 +2731,7 @@ namespace MiniZinc {
       if (opt.keepOutputInFzn) {
         copyOutput(env);
       } else {
-        createOutput(env, deletedVarDecls, opt.outputMode, opt.outputObjective, opt.outputOutputItem);
+        createOutput(env, deletedVarDecls, opt.outputMode, opt.outputObjective, opt.outputOutputItem, opt.hasChecker);
       }
       
       // Flatten remaining redefinitions
@@ -3332,6 +3323,7 @@ namespace MiniZinc {
     e->ann().remove(constants().ann.maybe_partial);
     e->ann().remove(constants().ann.add_to_output);
     e->ann().remove(constants().ann.rhs_from_assignment);
+    e->ann().remove(constants().ann.mzn_was_undefined);
     // Remove defines_var(x) annotation where x is par
     std::vector<Expression*> removeAnns;
     for (ExpressionSetIter anns = e->ann().begin(); anns != e->ann().end(); ++anns) {
@@ -3624,6 +3616,7 @@ namespace MiniZinc {
     vd->ann().remove(constants().ann.add_to_output);
     vd->ann().remove(constants().ann.mzn_check_var);
     vd->ann().remove(constants().ann.rhs_from_assignment);
+    vd->ann().remove(constants().ann.mzn_was_undefined);
     vd->ann().removeCall(constants().ann.mzn_check_enum_var);
 
     return added_constraints;
