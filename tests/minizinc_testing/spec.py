@@ -1,5 +1,6 @@
 from . import yaml
 import minizinc as mzn
+from minizinc.helpers import check_result
 from dataclasses import dataclass
 from dataclasses import make_dataclass
 import pathlib
@@ -31,7 +32,7 @@ class Test:
         """
         Runs this test case given an mzn file path, a solver name and some default options.
 
-        Any options specified in this test case directly will override those provided in 
+        Any options specified in this test case directly will override those provided in
         default options.
 
         Returns a tuple containing:
@@ -58,6 +59,10 @@ class Test:
             elif self.type == "compile":
                 with instance.flat(**options) as (fzn, ozn, stats):
                     obtained = FlatZinc.from_mzn(fzn, file.parent)
+                    result = obtained
+            elif self.type == "output-model":
+                with instance.flat(**options) as (fzn, ozn, stats):
+                    obtained = OutputModel.from_mzn(ozn, file.parent)
                     result = obtained
             else:
                 raise NotImplementedError("Unknown test case type")
@@ -133,7 +138,7 @@ class SolutionSet:
     """
     Represents a set of expected solutions that passes when
     every obtained solution matches an entry in this set.
-    
+
     Represented with `!SolutionSet` in YAML
     """
 
@@ -154,7 +159,7 @@ class SolutionSet:
 class Solution:
     """
     A solution which is satisfied when every member of the this solution matches a member in the obtained solution.
-    
+
     That is, the obtained solution can contain extra items that are not compared.
 
     Represented by `!Solution` in YAML.
@@ -163,6 +168,9 @@ class Solution:
     def __init__(self, **kwargs):
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    def items(self):
+        return vars(self).items()
 
     def is_satisfied(self, other):
         """
@@ -189,6 +197,7 @@ class Error:
     def __init__(self, **kwargs):
         self.type = yaml.Undefined
         self.message = yaml.Undefined
+        self.regex = yaml.Undefined
 
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -208,6 +217,9 @@ class Error:
 
         if self.message is not yaml.Undefined:
             return self.message == str(actual)
+
+        if self.regex is not yaml.Undefined:
+            return re.match(self.regex, str(actual), flags=re.M | re.S) is not None
 
         return True
 
@@ -240,26 +252,9 @@ class CachedResult:
         Checks that the result stored in this object, when given as data for the
         stored model with the given solver, is satisfied.
         """
-        # TODO: Improve this; it's a bit hacky
-        # check_solution needs the solution type to be a dataclass, so just make a dumb one
-        def as_dataclass(solution):
-            solution_dict = solution.__dict__
-            fields = solution_dict.keys()
-            return make_dataclass("Solution", fields)(**solution_dict)
-
-        solution = (
-            [as_dataclass(s) for s in self.result.solution if s is not None]
-            if isinstance(self.result.solution, list)
-            else as_dataclass(self.result.solution)
-        )
-        result = mzn.Result(
-            status=self.result.status,
-            solution=solution,
-            statistics=self.result.statistics,
-        )
         solver_instance = mzn.Solver.lookup(solver)
-        passed = mzn.helpers.check_solution(
-            model=self.model, result=result, solver=solver_instance
+        passed = check_result(
+            model=self.model, result=self.result, solver=solver_instance
         )
         return passed
 
@@ -309,13 +304,54 @@ class FlatZinc:
     def from_mzn(fzn, base):
         """
         Creates a `FlatZinc` object from a `File` returned by `flat()` in the minizinc interface.
-        
+
         Also takes the base path the mzn file was from, so that when loading the expected fzn file
         it can be done relative to the mzn path.
         """
         with open(fzn.name) as file:
             instance = FlatZinc(None)
             instance.fzn = file.read()
+            instance.base = base
+            return instance
+
+
+@yaml.scalar(u"!OutputModel")
+class OutputModel:
+    """
+    An OZN result, encoded by !OutputModel in YAML.
+    """
+
+    def __init__(self, path):
+        self.path = path
+        self.base = None
+        self.ozn = None
+
+    def check(self, actual):
+        if not isinstance(actual, OutputModel):
+            return False
+
+        if self.ozn is None:
+            with open(actual.base.joinpath(self.path)) as f:
+                self.ozn = f.read()
+
+        return self.ozn == actual.ozn
+
+    def get_value(self):
+        if self.ozn is None:
+            return self.path
+        return self.ozn
+
+    @staticmethod
+    def from_mzn(ozn, base):
+        """
+        Creates a `OutputModel` object from a `File` returned by `flat()` in the minizinc interface.
+
+        Also takes the base path the mzn file was from, so that when loading the expected ozn file
+        it can be done relative to the mzn path.
+        """
+        with open(ozn.name) as file:
+            instance = OutputModel(None)
+            instance.ozn = file.read()
             instance.base = base
             return instance
 
@@ -329,7 +365,7 @@ class Suite:
     """
 
     def __init__(self, **kwargs):
-        self.solvers = ["gecode", "cbc", "chuffed"]
+        self.solvers = None
         self.options = {}
         self.strict = True
         self.regex = r"."

@@ -9,16 +9,20 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __MINIZINC_REGEX_HH__
-#define __MINIZINC_REGEX_HH__
+#pragma once
+
 #ifdef HAS_GECODE
 
 // Regex Parser Requirements
-#include <memory>
-#include <unordered_map>
-#include <set>
-#include <gecode/minimodel.hh>
+#include <minizinc/astmap.hh>
+#include <minizinc/aststring.hh>
 #include <minizinc/values.hh>
+
+#include <memory>
+#include <set>
+
+#include <gecode/minimodel.hh>
+#undef ERROR
 
 // This is a workaround for a bug in flex that only shows up
 // with the Microsoft C++ compiler
@@ -36,7 +40,7 @@ extern "C" int isatty(int);
 #define fileno _fileno
 #endif
 
-//Anonymous struct for when yyparse is exported
+// Anonymous struct for when yyparse is exported
 typedef struct REContext REContext;
 // Parser generated header
 #include <minizinc/support/regex_parser.tab.hh>
@@ -45,7 +49,6 @@ using namespace Gecode;
 using namespace MiniZinc;
 
 // Parsing function
-std::unique_ptr<REG> regex_from_string(const std::string& expression, const IntSetVal& domain, const std::unordered_map<std::string, int>& identifiers);
+std::unique_ptr<REG> regex_from_string(const std::string& regex_str, const IntSetVal& domain);
 
-#endif //HAS_GECODE
-#endif //__MINIZINC_REGEX_HH__
+#endif  // HAS_GECODE

@@ -2,14 +2,8 @@
 #include <minizinc/solvers/fzn_solverinstance.hh>
 
 namespace MiniZinc {
-  namespace {
-    void getWrapper() {
-      static FZN_SolverFactory _fzn_solverfactory;
-      return;
-    }
-  }
-  FZN_SolverFactoryInitialiser::FZN_SolverFactoryInitialiser(void) {
-    getWrapper();
-  }
-}
-
+namespace {
+void get_wrapper() { static FZNSolverFactory _fzn_solverfactory; }
+}  // namespace
+FZNSolverFactoryInitialiser::FZNSolverFactoryInitialiser() { get_wrapper(); }
+}  // namespace MiniZinc

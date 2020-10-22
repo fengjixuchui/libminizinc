@@ -10,7 +10,7 @@ macro(MD5 filename md5sum)
   string(MD5 ${md5sum} "${STRIPPED_MD5_FILE}")
 endmacro(MD5)
 
-find_package(BISON 2.3)
+find_package(BISON 3.4)
 find_package(FLEX 2.5)
 
 if(BISON_FOUND AND FLEX_FOUND)
@@ -93,7 +93,7 @@ else()
   set(FLEX_RegExLexer_OUTPUTS ${PROJECT_SOURCE_DIR}/lib/cached/regex_lexer.yy.cpp)
 endif()
 
-if(NOT (GECODE_FOUND AND USE_GECODE))
+if(NOT GECODE_FOUND)
   set(FLEX_RegExLexer_OUTPUTS "")
   set(BISON_RegExParser_OUTPUTS "")
 endif()
@@ -104,8 +104,11 @@ add_library(minizinc_parser OBJECT
   ${BISON_RegExParser_OUTPUTS}
   ${FLEX_RegExLexer_OUTPUTS}
 )
+set_target_properties(minizinc_parser PROPERTIES
+  CXX_CLANG_TIDY ""
+)
 
-if(GECODE_FOUND AND USE_GECODE)
+if(GECODE_FOUND)
   target_include_directories(minizinc_parser PRIVATE "${GECODE_INCLUDE_DIRS}")
   target_compile_definitions(minizinc_parser PRIVATE HAS_GECODE)
 endif()

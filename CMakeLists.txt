@@ -5,7 +5,7 @@ set(CMAKE_OSX_DEPLOYMENT_TARGET "10.9" CACHE STRING "Minimum OS X deployment ver
 #  -- Project information and versioning.
 
 project(libminizinc
-        VERSION 2.4.3
+        VERSION 2.5.1
         LANGUAGES CXX C)
 
 if(NOT BUILD_REF)
@@ -15,18 +15,9 @@ endif()
 # -------------------------------------------------------------------------------------------------------------------
 #  -- Project build options
 
-# Driver compilation selection
-option(USE_CPLEX "Enable the CPLEX solving target" TRUE)
-option(USE_GEAS "Enable the Geas solving target" TRUE)
-option(USE_GECODE "Enable the Gecode solving target" TRUE)
-option(USE_GUROBI "Enable the Gurobi solving target" TRUE)
-option(USE_OSICBC "Enable the Osi CBC solving target" TRUE)
-option(USE_SCIP "Enable the SCIP solving target" TRUE)
-option(USE_XPRESS "Enable the Xpress solving target" TRUE)
-
 # Static vs. Dynamic linking
-option(CPLEX_PLUGIN "Build CPLEX binding as a plugin" ON)
-option(GUROBI_PLUGIN "Build Gurobi binding as a plugin" ON)
+option(CPlex_PLUGIN "Build CPLEX binding as a plugin" ON)
+option(Gurobi_PLUGIN "Build Gurobi binding as a plugin" ON)
 
 # Enforce non proprietary build
 option(USE_PROPRIETARY "Enable static linking of proprietary solvers" OFF)
@@ -35,11 +26,13 @@ if(NOT USE_PROPRIETARY)
   set(GUROBI_PLUGIN ON)
 endif()
 
-# Export compile commands (useful when working with visual studio code)
-set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+# CMake options default value
+option(CMAKE_POSITION_INDEPENDENT_CODE "Default value for POSITION_INDEPENDENT_CODE of targets" TRUE)
 
 # -------------------------------------------------------------------------------------------------------------------
 #  -- CMake initialisation
+
+include(GNUInstallDirs)
 
 # Fix library suffixes for Web Assembly platform
 include(cmake/support/emscripten_setup.cmake)
@@ -109,3 +102,7 @@ include(cmake/support/config_emscripten.cmake)
 
 include(cmake/support/config_export.cmake)
 include(cmake/support/config_output.cmake)
+
+# -------------------------------------------------------------------------------------------------------------------
+#  -- Support Actions
+include(cmake/support/format.cmake)

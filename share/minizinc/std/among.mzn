@@ -1,3 +1,5 @@
+include "among_fn.mzn";
+
 include "fzn_among.mzn";
 include "fzn_among_reif.mzn";
 

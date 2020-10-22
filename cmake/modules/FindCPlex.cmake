@@ -6,7 +6,7 @@
 #  CPLEX_COMPILE_FLAGS  - The definitions required to compile with CPLEX
 # User can set CPlex_ROOT to the preferred installation prefix
 
-set(CPLEX_COMPILE_FLAGS "-fPIC -fno-strict-aliasing -fexceptions -DNDEBUG")
+set(CPLEX_COMPILE_FLAGS "-fPIC -fno-strict-aliasing -fexceptions")
 
 set(CPLEX_VERSIONS 1210 129 128 1271 127 1263 1262 1261 126)
 
@@ -25,6 +25,13 @@ endforeach(VERSION)
 find_path(CPLEX_INCLUDE ilcplex/cplex.h
           HINTS ${CPLEX_DEFAULT_LOC}
           PATH_SUFFIXES include cplex/include)
+
+if(NOT "${CPLEX_INCLUDE}" STREQUAL "CPLEX_INCLUDE-NOTFOUND")
+  file(READ "${CPLEX_INCLUDE}/ilcplex/cplex.h" CPLEX_CONFIG)
+  string(REGEX MATCH " +\\* +Version +([0-9]+\\.[0-9]+\\.[0-9]+)" _ "${CPLEX_CONFIG}")
+  set(CPLEX_VERSION "${CMAKE_MATCH_1}")
+  unset(CPLEX_CONFIG)
+endif()
 
 if(CPLEX_PLUGIN)
   include(CheckIncludeFiles)
@@ -50,8 +57,12 @@ endif()
 include(FindPackageHandleStandardArgs)
 # handle the QUIETLY and REQUIRED arguments and set CBC_FOUND to TRUE
 # if all listed variables are TRUE
-find_package_handle_standard_args(CPlex DEFAULT_MSG
-                                  CPLEX_INCLUDE CPLEX_LIBRARY)
+find_package_handle_standard_args(CPlex
+  FOUND_VAR CPLEX_FOUND
+  REQUIRED_VARS CPLEX_INCLUDE CPLEX_LIBRARY
+  VERSION_VAR CPLEX_VERSION
+  FAIL_MESSAGE "Could NOT find CPlex, use CPLEX_ROOT to hint its location"
+)
 
 if(CPLEX_PLUGIN AND HAS_WINDOWS_H AND NOT HAS_DLFCN_H)
   unset(CPLEX_LIBRARY)

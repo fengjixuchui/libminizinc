@@ -8,9 +8,9 @@
 
 option(GUROBI_PLUGIN "Build Gurobi binding as a plugin" ON)
 
-set(GUROBI_COMPILE_FLAGS "-fPIC -fno-strict-aliasing -fexceptions -DNDEBUG")
+set(GUROBI_COMPILE_FLAGS "-fPIC -fno-strict-aliasing -fexceptions")
 
-set(GUROBI_VERSIONS 901 900 811 810 801 752 702)
+set(GUROBI_VERSIONS 903 902 901 900 811 810 801 752 702)
 
 foreach(VERSION ${GUROBI_VERSIONS})
   list(APPEND GUROBI_DEFAULT_LOC "/opt/gurobi${VERSION}/linux64")
@@ -27,6 +27,18 @@ find_path(GUROBI_INCLUDE gurobi_c.h
           PATHS $ENV{GUROBI_HOME}
           HINTS ${GUROBI_DEFAULT_LOC}
           PATH_SUFFIXES include)
+
+if(NOT "${GUROBI_INCLUDE}" STREQUAL "GUROBI_INCLUDE-NOTFOUND")
+  file(READ "${GUROBI_INCLUDE}/gurobi_c.h" GUROBI_CONFIG)
+  string(REGEX MATCH "\#define GRB_VERSION_MAJOR +([0-9]+)" _ "${GUROBI_CONFIG}")
+  set(GRB_VERSION_MAJOR "${CMAKE_MATCH_1}")
+  string(REGEX MATCH "\#define GRB_VERSION_MINOR +([0-9]+)" _ "${GUROBI_CONFIG}")
+  set(GRB_VERSION_MINOR "${CMAKE_MATCH_1}")
+  string(REGEX MATCH "\#define GRB_VERSION_TECHNICAL +([0-9]+)" _ "${GUROBI_CONFIG}")
+  set(GRB_VERSION_TECHNICAL "${CMAKE_MATCH_1}")
+  set(GUROBI_VERSION "${GRB_VERSION_MAJOR}.${GRB_VERSION_MINOR}.${GRB_VERSION_TECHNICAL}")
+  unset(GUROBI_CONFIG)
+endif()
 
 if(GUROBI_PLUGIN)
   include(CheckIncludeFiles)
@@ -56,6 +68,7 @@ include(FindPackageHandleStandardArgs)
 find_package_handle_standard_args(Gurobi
   FOUND_VAR GUROBI_FOUND
   REQUIRED_VARS GUROBI_INCLUDE GUROBI_LIBRARY
+  VERSION_VAR GUROBI_VERSION
   FAIL_MESSAGE "Could NOT find Gurobi, use GUROBI_ROOT to hint its location"
 )
 

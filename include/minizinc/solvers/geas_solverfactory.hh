@@ -9,14 +9,11 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __MINIZINC_GEAS_SOLVERFACTORY_HH__
-#define __MINIZINC_GEAS_SOLVERFACTORY_HH__
+#pragma once
 
 namespace MiniZinc {
-  class Geas_SolverFactoryInitialiser {
-  public:
-    Geas_SolverFactoryInitialiser();
-  };
-}
-
-#endif // __MINIZINC_GEAS_SOLVERFACTORY_HH__
+class GeasSolverFactoryInitialiser {
+public:
+  GeasSolverFactoryInitialiser();
+};
+}  // namespace MiniZinc

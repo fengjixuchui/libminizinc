@@ -9,24 +9,21 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
-#ifndef __MINIZINC_GECODE_PASS_HH__
-#define __MINIZINC_GECODE_PASS_HH__
+#pragma once
 
 #include <minizinc/flatten.hh>
 
 namespace MiniZinc {
-  
-  class GecodeOptions;
-  
-  class GecodePass : public Pass {
-    GecodeOptions* gopts;
 
-    public:
-    GecodePass(GecodeOptions* gopts);
+class GecodeOptions;
 
-    Env* run(Env* e, std::ostream& log);
-  };
+class GecodePass : public Pass {
+  GecodeOptions* _gopts;
 
-}
+public:
+  GecodePass(GecodeOptions* gopts);
 
-#endif
+  Env* run(Env* e, std::ostream& log) override;
+};
+
+}  // namespace MiniZinc
