@@ -145,6 +145,8 @@ public:
   // NOLINTNEXTLINE(readability-identifier-naming)
   SCIP_SOL*(__stdcall* SCIPgetBestSol)(SCIP* scip);
   // NOLINTNEXTLINE(readability-identifier-naming)
+  SCIP_Longint(__stdcall* SCIPgetNTotalNodes)(SCIP* scip);
+  // NOLINTNEXTLINE(readability-identifier-naming)
   SCIP_Longint(__stdcall* SCIPgetNNodes)(SCIP* scip);
   // NOLINTNEXTLINE(readability-identifier-naming)
   int(__stdcall* SCIPgetNNodesLeft)(SCIP* scip);
@@ -253,7 +255,7 @@ class MIPScipWrapper : public MIPWrapper {
 public:
   class FactoryOptions {
   public:
-    bool processOption(int& i, std::vector<std::string>& argv);
+    bool processOption(int& i, std::vector<std::string>& argv, const std::string& workingDir);
 
     std::string scipDll;
   };
@@ -275,7 +277,7 @@ public:
 
     std::unordered_map<std::string, std::string> extraParams;
 
-    bool processOption(int& i, std::vector<std::string>& argv);
+    bool processOption(int& i, std::vector<std::string>& argv, const std::string& workingDir);
     static void printHelp(std::ostream& os);
   };
 
@@ -309,7 +311,8 @@ public:
 
   static std::vector<MiniZinc::SolverConfig::ExtraFlag> getExtraFlags(FactoryOptions& factoryOpt);
 
-  bool processOption(int& i, int argc, const char** argv);
+  bool processOption(int& i, int argc, const char** argv,
+                     const std::string& workingDir = std::string());
   void printVersion(std::ostream& os);
   void printHelp(std::ostream& os);
   //       Statistics& getStatistics() { return _statistics; }

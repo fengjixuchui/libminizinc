@@ -23,18 +23,40 @@
 
 namespace MiniZinc {
 
-Scopes::Scopes() {
-  _s.emplace_back();
-  _s.back().toplevel = true;
-}
+Scopes::Scopes() { _s.emplace_back(ST_TOPLEVEL); }
 
 void Scopes::add(EnvI& env, VarDecl* vd) {
-  if (!_s.back().toplevel && vd->ti()->isEnum() && (vd->e() != nullptr)) {
+  if (!_s.back().toplevel() && vd->ti()->isEnum() && (vd->e() != nullptr)) {
     throw TypeError(env, vd->loc(), "enums are only allowed at top level");
   }
   if (vd->id()->idn() == -1 && vd->id()->v() == "") {
     return;
   }
+  // If the current scope is ST_INNER, check if vd shadows another
+  // declaration from the same functional or toplevel scope
+  if (_s.back().st == ST_INNER) {
+    assert(_s.size() > 1);  // at least toplevel scope above
+    for (int i = static_cast<int>(_s.size()) - 2; i >= 0; i--) {
+      auto previous = _s[i].m.find(vd->id());
+      if (previous != _s[i].m.end()) {
+        std::ostringstream oss;
+        ASTString warnloc_f = vd->loc().filename();
+        unsigned int warnloc_l = vd->id()->loc().firstLine();
+        unsigned int warnloc_c = vd->id()->loc().firstColumn();
+        unsigned int earlier_l = previous->second->id()->loc().firstLine();
+        unsigned int earlier_c = previous->second->id()->loc().firstColumn();
+        oss << "\n  " << warnloc_f << ":" << warnloc_l << "." << warnloc_c << ":\n";
+        oss << "  Variable `" << *vd->id() << "' shadows variable with the same name in line "
+            << earlier_l << "." << earlier_c;
+        env.addWarning(oss.str());
+        break;
+      }
+      if (_s[i].st != ST_INNER) {
+        break;
+      }
+    }
+  }
+
   auto vdi = _s.back().m.find(vd->id());
   if (vdi == _s.back().m.end()) {
     _s.back().m.insert(vd->id(), vd);
@@ -45,10 +67,11 @@ void Scopes::add(EnvI& env, VarDecl* vd) {
   }
 }
 
-void Scopes::push(bool toplevel) {
-  _s.emplace_back();
-  _s.back().toplevel = toplevel;
-}
+void Scopes::pushToplevel() { _s.emplace_back(ST_TOPLEVEL); }
+
+void Scopes::pushFun() { _s.emplace_back(ST_FUN); }
+
+void Scopes::push() { _s.emplace_back(ST_INNER); }
 
 void Scopes::pop() { _s.pop_back(); }
 
@@ -57,7 +80,7 @@ VarDecl* Scopes::find(Id* ident) {
   for (;;) {
     auto vdi = _s[cur].m.find(ident);
     if (vdi == _s[cur].m.end()) {
-      if (_s[cur].toplevel) {
+      if (_s[cur].toplevel()) {
         if (cur > 0) {
           cur = 0;
         } else {
@@ -85,7 +108,7 @@ VarDecl* Scopes::findSimilar(Id* ident) {
         mostSimilar = decls.second;
       }
     }
-    if (_s[cur].toplevel) {
+    if (_s[cur].toplevel()) {
       if (cur > 0) {
         cur = 0;
       } else {
@@ -1134,7 +1157,7 @@ VarDecl* TopoSorter::checkId(EnvI& env, Id* ident, const Location& loc) {
   auto pi = pos.find(decl);
   if (pi == pos.end()) {
     // new id
-    scopes.push(true);
+    scopes.pushToplevel();
     run(env, decl);
     scopes.pop();
   } else {
@@ -1194,7 +1217,7 @@ void TopoSorter::run(EnvI& env, Expression* e) {
     } break;
     case Expression::E_COMP: {
       auto* ce = e->cast<Comprehension>();
-      scopes.push(false);
+      scopes.push();
       for (int i = 0; i < ce->numberOfGenerators(); i++) {
         run(env, ce->in(i));
         for (int j = 0; j < ce->numberOfDecls(i); j++) {
@@ -1271,7 +1294,7 @@ void TopoSorter::run(EnvI& env, Expression* e) {
       break;
     case Expression::E_LET: {
       Let* let = e->cast<Let>();
-      scopes.push(false);
+      scopes.push();
       for (unsigned int i = 0; i < let->let().size(); i++) {
         run(env, let->let()[i]);
         if (auto* vd = let->let()[i]->dynamicCast<VarDecl>()) {
@@ -2249,6 +2272,19 @@ public:
       args[i] = call.arg(i);
     }
     FunctionI* fi = _model->matchFn(_env, &call, true, true);
+
+    if (fi != nullptr && fi->id() == "symmetry_breaking_constraint" && fi->params().size() == 1 &&
+        fi->params()[0]->type().isbool()) {
+      GCLock lock;
+      call.id(ASTString("mzn_symmetry_breaking_constraint"));
+      fi = _model->matchFn(_env, &call, true, true);
+    } else if (fi != nullptr && fi->id() == "redundant_constraint" && fi->params().size() == 1 &&
+               fi->params()[0]->type().isbool()) {
+      GCLock lock;
+      call.id(ASTString("mzn_redundant_constraint"));
+      fi = _model->matchFn(_env, &call, true, true);
+    }
+
     if ((fi->e() != nullptr) && fi->e()->isa<Call>()) {
       Call* next_call = fi->e()->cast<Call>();
       if ((next_call->decl() != nullptr) && next_call->argCount() == fi->params().size() &&
@@ -2259,6 +2295,18 @@ public:
             macro = false;
             break;
           }
+        }
+        if (macro) {
+          // Call is not a macro if it has a reification implementation
+          GCLock lock;
+          ASTString reif_id = _env.reifyId(fi->id());
+          std::vector<Type> tt(fi->params().size() + 1);
+          for (unsigned int i = 0; i < fi->params().size(); i++) {
+            tt[i] = fi->params()[i]->type();
+          }
+          tt[fi->params().size()] = Type::varbool();
+
+          macro = _model->matchFn(_env, reif_id, tt, true) == nullptr;
         }
         if (macro) {
           call.decl(next_call->decl());
@@ -2434,11 +2482,12 @@ public:
             // let's ignore this for now (TODO: add an annotation to make sure only
             // compiler-generated ones are accepted)
           } else {
+            const Location& loc = vd.e()->loc().isNonAlloc() ? vd.loc() : vd.e()->loc();
             std::ostringstream ss;
             ss << "initialisation value for `" << vd.id()->str()
                << "' has invalid type-inst: expected `" << vd.ti()->type().toString(_env)
                << "', actual `" << vd.e()->type().toString(_env) << "'";
-            _typeErrors.emplace_back(_env, vd.e()->loc(), ss.str());
+            _typeErrors.emplace_back(_env, loc, ss.str());
           }
         } else {
           vd.e(add_coercion(_env, _model, vd.e(), vd.ti()->type())());
@@ -2741,7 +2790,7 @@ void typecheck(Env& env, Model* origModel, std::vector<TypeError>& typeErrors,
       for (ExpressionSetIter it = fi->ann().begin(); it != fi->ann().end(); ++it) {
         ts.run(env, *it);
       }
-      ts.scopes.push(false);
+      ts.scopes.pushFun();
       for (unsigned int i = 0; i < fi->params().size(); i++) {
         ts.scopes.add(env, fi->params()[i]);
       }
@@ -2991,7 +3040,8 @@ void typecheck(Env& env, Model* origModel, std::vector<TypeError>& typeErrors,
         }
         if (!parIsUsable) {
           // check if body of f doesn't contain any free variables in lets,
-          // and all calls in the body have par versions available
+          // all calls in the body have par versions available,
+          // and all toplevel identifiers used in the body of f are par
           class CheckParBody : public EVisitor {
           public:
             EnvI& env;
@@ -3002,6 +3052,11 @@ void typecheck(Env& env, Model* origModel, std::vector<TypeError>& typeErrors,
             bool enter(Expression* e) const {
               // if we have already found a var, don't continue
               return isPar;
+            }
+            void vId(const Id& ident) {
+              if (ident.decl() != nullptr && ident.type().isvar() && ident.decl()->toplevel()) {
+                isPar = false;
+              }
             }
             void vLet(const Let& let) {
               // check if any of the declared variables does not have a RHS
@@ -3027,11 +3082,10 @@ void typecheck(Env& env, Model* origModel, std::vector<TypeError>& typeErrors,
                 }
                 // check if specialised par version of function already exists
                 FunctionI* decl_par = m->matchFn(env, decl->id(), tv, false);
-                bool parIsUsable = false;
-                if (decl_par->ti()->type().isPar() && decl_par->e() == nullptr &&
-                    decl_par->fromStdLib()) {
+                bool parIsUsable = decl_par->ti()->type().isPar();
+                if (parIsUsable && decl_par->e() == nullptr && decl_par->fromStdLib()) {
                   parIsUsable = true;
-                } else {
+                } else if (parIsUsable) {
                   bool foundVar = false;
                   for (auto* p : decl_par->params()) {
                     if (p->type().isvar()) {
@@ -3122,6 +3176,23 @@ void typecheck(Env& env, Model* origModel, std::vector<TypeError>& typeErrors,
       void vCall(Call& c) {
         FunctionI* decl = m->matchFn(env, &c, false);
         c.decl(decl);
+      }
+      void vBinOp(BinOp& bo) {
+        if (bo.decl() != nullptr) {
+          std::vector<Type> ta(2);
+          ta[0] = bo.lhs()->type();
+          ta[1] = bo.rhs()->type();
+          FunctionI* decl = m->matchFn(env, bo.opToString(), ta, false);
+          bo.decl(decl);
+        }
+      }
+      void vUnOp(UnOp& uo) {
+        if (uo.decl() != nullptr) {
+          std::vector<Type> ta(1);
+          ta[0] = uo.e()->type();
+          FunctionI* decl = m->matchFn(env, uo.opToString(), ta, false);
+          uo.decl(decl);
+        }
       }
     } _mfp(env.envi(), m);
 

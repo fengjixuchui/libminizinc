@@ -37,7 +37,6 @@ default:
 
 .build:
   stage: build
-  interruptible: true
   before_script:
     - *download_vendor
   script:
@@ -77,17 +76,17 @@ build:win64:
   extends: .build
   variables:
     MZNARCH: "win64"
-    CMAKE_ARCH: "Visual Studio 15 2017 Win64"
+    CMAKE_ARCH: "Ninja"
+    BUILDCACHE_DIR: "$CI_PROJECT_DIR/.ccache"
+    BUILDCACHE_MAX_CACHE_SIZE: "104857600"
   before_script:
     - *download_vendor_win
   script:
-    - cmake -S . -B build -G"%CMAKE_ARCH%" -DBUILD_REF=%CI_PIPELINE_ID% -DUSE_PROPRIETARY=OFF -DGecode_ROOT="%CI_PROJECT_DIR%/vendor/gecode" -DGurobi_ROOT="%CI_PROJECT_DIR%/vendor/gurobi" -DCPlex_ROOT="%CI_PROJECT_DIR%/vendor/CPLEX_Studio/cplex" -DOsiCBC_ROOT="%CI_PROJECT_DIR%/vendor/cbc" -DSCIP_ROOT="%CI_PROJECT_DIR%/vendor/scip" -DXpress_ROOT="%CI_PROJECT_DIR%/vendor/xpressmp" -DCMAKE_INSTALL_PREFIX="%CI_PROJECT_DIR%/minizinc"
+    - cmake -S . -B build -G"%CMAKE_ARCH%" -DCMAKE_BUILD_TYPE=Release -DBUILD_REF=%CI_PIPELINE_ID% -DCCACHE_PROGRAM:STRING=buildcache -DUSE_PROPRIETARY=OFF -DGecode_ROOT="%CI_PROJECT_DIR%/vendor/gecode" -DGurobi_ROOT="%CI_PROJECT_DIR%/vendor/gurobi" -DCPlex_ROOT="%CI_PROJECT_DIR%/vendor/CPLEX_Studio/cplex" -DOsiCBC_ROOT="%CI_PROJECT_DIR%/vendor/cbc" -DSCIP_ROOT="%CI_PROJECT_DIR%/vendor/scip" -DXpress_ROOT="%CI_PROJECT_DIR%/vendor/xpressmp" -DCMAKE_INSTALL_PREFIX="%CI_PROJECT_DIR%/minizinc"
     - cmake --build build --config Release --target install
   cache:
     key: "build_win64"
-    paths: [vendor.zip*]
-  tags: [win64, cmake, cpp]
-  only: [tags, merge_requests, pipelines, develop, master]
+  tags: [win64, cmake, cpp, ninja, buildcache]
 
 build:wasm_complete:
   extends: .build
@@ -251,6 +250,41 @@ test:win64:full:
   extends: [.tests_win64, .tests_full]
   cache:
     key: test_win64_full
+
+# ----------- Documentation -----------
+
+documentation:
+  stage: test
+  image: guidotack/sphinx-doc:latest
+  variables:
+    MZNARCH: "linux"
+  before_script:
+    - *download_bundle
+  script:
+    - cp $CI_PROJECT_DIR/share/minizinc/gecode_presolver/gecode.mzn $CI_PROJECT_DIR/share/minizinc/std/
+    - cp $CI_PROJECT_DIR/vendor/chuffed/share/minizinc/chuffed/chuffed.mzn $CI_PROJECT_DIR/share/minizinc/std/
+    - echo 'include "globals.mzn"; include "gecode.mzn"; include "chuffed.mzn";' > $CI_PROJECT_DIR/share/minizinc/std/all.mzn
+    - ./minizinc/bin/mzn2doc --rst-output --include-stdlib --output-base $CI_PROJECT_DIR/docs/en/lib $CI_PROJECT_DIR/share/minizinc/std/all.mzn
+    - ./minizinc/bin/mzn2doc --rst-output --include-stdlib --output-base $CI_PROJECT_DIR/docs/chi/lib $CI_PROJECT_DIR/share/minizinc/std/all.mzn
+    - cd $CI_PROJECT_DIR/docs/en
+    - make html latexpdf
+    - cd $CI_PROJECT_DIR/docs/chi
+    - make html latexpdf
+    - mkdir -p $CI_PROJECT_DIR/docs-deploy/en
+    - mkdir -p $CI_PROJECT_DIR/docs-deploy/chi
+    - cp -r $CI_PROJECT_DIR/docs/en/_build/html/* $CI_PROJECT_DIR/docs-deploy/en/
+    - cp $CI_PROJECT_DIR/docs/en/_build/latex/MiniZinc.pdf $CI_PROJECT_DIR/docs-deploy/en/MiniZinc\ Handbook.pdf
+    - cp -r $CI_PROJECT_DIR/docs/chi/_build/html/* $CI_PROJECT_DIR/docs-deploy/chi/
+    - cp $CI_PROJECT_DIR/docs/chi/_build/latex/MiniZinc.pdf $CI_PROJECT_DIR/docs-deploy/chi/MiniZinc\ Handbook.pdf
+  artifacts:
+    paths:
+      - docs-deploy
+  tags:
+    - linux
+    - docker
+  only: [tags, merge_requests, pipelines, develop, master]
+  dependencies: ["build:linux"]
+  needs: ["build:linux"]
 
 # ----------- Trigger FindMUS pipeline -----------
 
